@@ -324,7 +324,7 @@
 
   async function build(ctx, tabs, T, opt) {
     READ = opt.readable !== false;
-    const doc = new DOCX.Doc({ readable: READ, codePlain: !!opt.codePlain });
+    const doc = new DOCX.Doc({ readable: READ, italVars: true, codePlain: !!opt.codePlain });
     const P = ctx.S.P, R = ctx.S.R;
     titlePage(doc, T, tabs, P);
     tabs.forEach((tab, k) => {
