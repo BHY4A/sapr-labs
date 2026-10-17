@@ -8,7 +8,7 @@
   const sleep = ms => new Promise(r => setTimeout(r, ms));
 
   const LABS_META = [
-    { id: 'data', no: '0', short: 'Данные', t: 'Исходные данные', s: 'Вариант, параметры, выбор элементов' },
+    { id: 'data', no: '0', short: 'Данные', t: 'Исходные данные', s: 'Параметры, элементы, методика, отчёт' },
     { id: 'lr1', no: '1', short: 'Элементы', t: 'Выбор и расчёт элементов ЭП', s: 'Двигатель, ТП, ТГ, ВТ' },
     { id: 'lr2', no: '2', short: 'Нескорр. КС', t: 'Нескорректированный контур скорости', s: 'Установившиеся ошибки' },
     { id: 'lr3', no: '3', short: 'ПИД РС', t: 'Оптимизация контура скорости', s: 'ПИД-регулятор, оптимум по модулю' },
@@ -1012,17 +1012,29 @@
       lr4: `Значения Step/Step1 даны для переходной характеристики по заданию. Для характеристики по моменту сопротивления: Step → 0, Step1 → −M<sub>c0</sub> = −${f(P.Mc)}.` }[tab];
     return `<h2>Блоки модели Simulink</h2><p>Если собираете модель вручную, впишите в блоки эти значения (копируются кнопкой). Имена блоков — как в скрипте <code>*_model.m</code>, который строит ту же модель автоматически.</p>${note ? `<div class="note">${note}</div>` : ''}${blocks}`;
   }
+  /* файлы работы — шагами, в том же виде, что во всех утилитах: шаг → «Запустить / Результат» → текст файла; в конце — итог с архивом */
+  function fileName(f) { return f.path.split('/')[1]; }
+  function runCmd(f) { const name = fileName(f), meta = FILEMETA[name] || {}; return meta.run || name.replace(/\.m$/, ''); }
   function filesPanel(tab) {
     const files = labFiles(tab);
     const items = files.map((f, k) => {
-      const name = f.path.split('/')[1], meta = FILEMETA[name] || {}, run = meta.run || name.replace(/\.m$/, '');
+      const name = fileName(f), meta = FILEMETA[name] || {}, run = runCmd(f);
       const figs = (meta.figs || []).map(id => figNo(tab, id)).filter(Boolean).map((no, j) => `<button class="fig-link" data-fig="${meta.figs[j]}">Рис. ${no}</button>`).join(' ');
-      return `<li class="step"><div class="step-top"><span class="step-no">${k + 1}</span><div class="step-t"><h4 class="mono">${esc(name)}</h4><div class="step-sec">${esc(f.desc)}</div></div><span class="acts"><button class="btn sm" data-fview="${k}">Показать</button><button class="btn sm" data-fcopy="${k}">Копировать</button><button class="btn sm primary" data-fdl="${k}">${dlIcon()} Скачать</button></span></div>
-        <dl class="step-kv"><dt>${meta.run ? 'Что сделать' : 'Запустить'}</dt><dd>${meta.run ? esc(meta.run) : `<code class="run">${esc(run)}</code>`}</dd>
-        <dt>Результат</dt><dd>${figs ? figs + ' — ' : ''}${esc(meta.result || f.desc)}</dd></dl><div class="file-view" hidden></div></li>`;
+      return `<li class="step">
+        <div class="step-top"><span class="step-no">${k + 1}</span><div class="step-t"><div class="step-sec">${/\.st$/.test(name) ? 'Программа CoDeSys' : 'Скрипт MATLAB'}</div><h4 class="mono">${esc(name)}</h4></div><button class="btn primary sm" data-fdl="${k}">${dlIcon()} Скачать</button></div>
+        <dl class="step-kv">
+          <dt>Назначение</dt><dd>${esc(f.desc)}</dd>
+          <dt>${meta.run ? 'Что сделать' : 'Запустить'}</dt><dd>${meta.run ? esc(meta.run) : `<code class="run">${esc(run)}</code><button class="calc-btn" data-run="${k}" title="Копировать команду" aria-label="Копировать команду">${ICON_COPY}</button>`}</dd>
+          <dt>Результат</dt><dd>${figs ? figs + ' — ' : ''}${esc(meta.result || f.desc)}</dd>
+        </dl>
+        <details class="step-files"><summary>Текст файла</summary><div class="file-row"><div><div class="fn">${esc(name)}</div><div class="fd">${esc(f.desc)}</div></div><div class="acts"><button class="btn sm" data-fview="${k}">Показать</button><button class="btn sm" data-fcopy="${k}">Копировать</button><button class="btn sm" data-fdl="${k}">Скачать</button></div><div class="file-view" hidden></div></div></details>
+      </li>`;
     }).join('');
-    return `<section class="files" aria-label="Файлы для MATLAB"><div class="files-head"><div><h3>Файлы для MATLAB</h3><p>Запускайте по порядку; каждый файл самодостаточен — параметры варианта записаны внутри. Рисунки открываются с теми же номерами, что на этой странице, и сохраняются в PNG в папку <code>figures</code> рядом со скриптом (отключить: <code>save_figs = false</code> в начале файла).</p></div><span style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" data-docx="${tab}">${dlIcon()} Отчёт Word</button><button class="btn primary" data-zip="${tab}">${dlIcon()} ZIP этой работы</button></span></div>
-      <ol class="steps">${items}</ol></section>`;
+    const fin = `<div class="step-fin"><div class="step-top"><span class="step-no all" aria-hidden="true">✓</span><div class="step-t"><div class="step-sec">Итог</div><h4>ЛР № ${tab.slice(2)} целиком</h4></div><button class="btn sm" data-zip="${tab}">${dlIcon()} ZIP работы</button></div>
+        <p class="fd">Все файлы работы в одной папке. В архиве также README и отчёт Word по этой работе.</p>
+        <div class="fchips">${files.map(f => `<span class="fchip" title="${esc(f.desc)}">${esc(fileName(f))}</span>`).join('')}</div></div>`;
+    return `<section class="files" aria-label="Файлы для MATLAB"><div class="files-head"><div><h3>Файлы для MATLAB по шагам</h3><p>Запускайте по порядку; каждый файл самодостаточен — параметры варианта записаны внутри. Рисунки открываются с теми же номерами, что на этой странице, и сохраняются в PNG в папку <code>figures</code> рядом со скриптом (отключить: <code>save_figs = false</code> в начале файла).</p></div><span style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" data-docx="${tab}">${dlIcon()} Отчёт Word</button></span></div>
+      <ol class="steps">${items}</ol>${fin}</section>`;
   }
   function bindFiles(root) {
     const files = labFiles(S.tab);
@@ -1030,9 +1042,10 @@
     $$('[data-sh]', root).forEach(b => b.onclick = () => copyText(SIMHINT[b.dataset.sh], 'Значение скопировано'));
     $$('[data-dl]', root).forEach(b => b.onclick = () => downloadText(CODE[b.dataset.dl].name, CODE[b.dataset.dl].src));
     $$('[data-fcopy]', root).forEach(b => b.onclick = () => copyText(files[+b.dataset.fcopy].gen()));
-    $$('[data-fdl]', root).forEach(b => b.onclick = () => { const f = files[+b.dataset.fdl]; downloadText(f.path.split('/')[1], f.gen()); });
+    $$('[data-fdl]', root).forEach(b => b.onclick = () => { const f = files[+b.dataset.fdl]; downloadText(fileName(f), f.gen()); });
+    $$('[data-run]', root).forEach(b => b.onclick = () => copyText(runCmd(files[+b.dataset.run]), 'Команда скопирована'));
     $$('[data-fview]', root).forEach(b => b.onclick = () => {
-      const row = b.closest('.step'), v = row.querySelector('.file-view'), f = files[+b.dataset.fview];
+      const row = b.closest('.file-row'), v = row.querySelector('.file-view'), f = files[+b.dataset.fview];
       if (v.hidden) { v.innerHTML = `<pre class="src">${hl(f.gen(), f.lang)}</pre>`; v.hidden = false; b.textContent = 'Скрыть'; }
       else { v.hidden = true; v.innerHTML = ''; b.textContent = 'Показать'; }
     });
@@ -1055,6 +1068,7 @@
     ta.remove();
   }
   function downloadBlob(name, blob) {
+    if (window.SUITE && SUITE.save) return SUITE.save(name, blob);   // общий механизм (suite.js): сайт или артефакт claude.ai
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a'); a.href = url; a.download = name; document.body.appendChild(a); a.click();
     setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 1500);
@@ -1392,12 +1406,13 @@ ${parts.join('\n')}</body></html>`;
     $('#var-next').onclick = () => setVariant(S.P.variant + 1);
     $('#share').onclick = share;
     $('#theme').onclick = themeToggle;
+    window.addEventListener('suite:style', () => { if (S.tab !== 'data') renderTab(); });   // новый стиль — перерисовать графики в его цветах и шрифтах
     const setTopH = () => document.documentElement.style.setProperty('--top-h', $('.top').offsetHeight + 'px');
     window.addEventListener('resize', setTopH); setTopH();
     load(); loadT();
     const au = getAuto();
     if (S.shared) { S.skipAuto = true; recompute(); toast('Открыт расчёт по ссылке'); }
-    else if (au && au.P) {
+    else if (au && au.P && !/^#v\d/.test(location.hash || '')) {   // ссылка с вариантом открывается сразу, без вопроса об автосохранении
       // начинаем с чистого состояния и предлагаем вернуться к автосохранению
       S.P = L.fromVariant(1); S.T = Object.assign({}, T_DEF); S.tab = 'data';
       S.skipAuto = true; recompute();

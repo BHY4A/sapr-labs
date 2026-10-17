@@ -48,6 +48,20 @@
       }
     };
     walk(div, {});
+    // ГОСТ 2.304: обозначения величин (одиночные латинские буквы) в тексте — курсивом
+    if (this.opt.italVars) {
+      const re = /(^|[^A-Za-z0-9_°])([A-Za-z])(?![A-Za-z0-9])/g;
+      for (let k = segs.length - 1; k >= 0; k--) {
+        const sg = segs[k];
+        if (!sg.t || sg.sub || sg.sup || sg.i) continue;
+        const parts = []; let last = 0, m;
+        re.lastIndex = 0;
+        while ((m = re.exec(sg.t))) { const at = m.index + m[1].length; if (at > last) parts.push(Object.assign({}, sg, { t: sg.t.slice(last, at) })); parts.push(Object.assign({}, sg, { t: m[2], i: true })); last = at + 1; re.lastIndex = last; }
+        if (!parts.length) continue;
+        if (last < sg.t.length) parts.push(Object.assign({}, sg, { t: sg.t.slice(last) }));
+        segs.splice(k, 1, ...parts);
+      }
+    }
     // ГОСТ: обозначение величины (одиночная латинская буква) курсивом, если за ней следует индекс
     const out = [];
     for (let k = 0; k < segs.length; k++) {
@@ -84,12 +98,13 @@
     this.body.push(`<w:p>${this.pPr(Object.assign({ indent: 0, align: 'center', spacing: { before: 60, after: 60 } }, p || {}))}<m:oMathPara><m:oMathParaPr><m:jc m:val="center"/></m:oMathParaPr>${omml}</m:oMathPara></w:p>`); return this;
   };
   /* формула по центру с номером у правого края (ГОСТ 2.105): таблица без границ */
-  Doc.prototype.mathNum = function (omml, num) {
+  Doc.prototype.mathNum = function (omml, num, keep) {
+    const kn = keep ? '<w:keepNext/>' : '';
     const nb = '<w:tblBorders><w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/><w:right w:val="nil"/><w:insideH w:val="nil"/><w:insideV w:val="nil"/></w:tblBorders>';
     this.body.push(`<w:tbl><w:tblPr><w:tblW w:w="9354" w:type="dxa"/>${nb}<w:tblLayout w:type="fixed"/><w:tblCellMar><w:left w:w="0" w:type="dxa"/><w:right w:w="0" w:type="dxa"/></w:tblCellMar></w:tblPr><w:tblGrid><w:gridCol w:w="8454"/><w:gridCol w:w="900"/></w:tblGrid><w:tr><w:trPr><w:cantSplit/></w:trPr>` +
-      `<w:tc><w:tcPr><w:tcW w:w="8454" w:type="dxa"/><w:vAlign w:val="center"/></w:tcPr><w:p><w:pPr><w:spacing w:before="60" w:after="60" w:line="240" w:lineRule="auto"/><w:ind w:firstLine="0"/><w:jc w:val="center"/></w:pPr><m:oMathPara><m:oMathParaPr><m:jc m:val="center"/></m:oMathParaPr>${omml}</m:oMathPara></w:p></w:tc>` +
-      `<w:tc><w:tcPr><w:tcW w:w="900" w:type="dxa"/><w:vAlign w:val="center"/></w:tcPr><w:p><w:pPr><w:spacing w:line="240" w:lineRule="auto"/><w:ind w:firstLine="0"/><w:jc w:val="right"/></w:pPr>${this.runs('(' + num + ')')}</w:p></w:tc></w:tr></w:tbl>`
-      + '<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="40" w:lineRule="exact"/><w:ind w:firstLine="0"/></w:pPr></w:p>');
+      `<w:tc><w:tcPr><w:tcW w:w="8454" w:type="dxa"/><w:vAlign w:val="center"/></w:tcPr><w:p><w:pPr>${kn}<w:spacing w:before="60" w:after="60" w:line="240" w:lineRule="auto"/><w:ind w:firstLine="0"/><w:jc w:val="center"/></w:pPr><m:oMathPara><m:oMathParaPr><m:jc m:val="center"/></m:oMathParaPr>${omml}</m:oMathPara></w:p></w:tc>` +
+      `<w:tc><w:tcPr><w:tcW w:w="900" w:type="dxa"/><w:vAlign w:val="center"/></w:tcPr><w:p><w:pPr>${kn}<w:spacing w:line="240" w:lineRule="auto"/><w:ind w:firstLine="0"/><w:jc w:val="right"/></w:pPr>${this.runs('(' + num + ')')}</w:p></w:tc></w:tr></w:tbl>`
+      + `<w:p><w:pPr>${kn}<w:spacing w:before="0" w:after="0" w:line="40" w:lineRule="exact"/><w:ind w:firstLine="0"/></w:pPr></w:p>`);
     return this;
   };
   /* таблица: head — массив строк/HTML, rows — массив массивов */
@@ -102,9 +117,9 @@
     let x = `<w:tbl><w:tblPr><w:tblW w:w="${cw.reduce((a, b) => a + b, 0)}" w:type="dxa"/><w:jc w:val="center"/>${border}<w:tblLayout w:type="fixed"/><w:tblCellMar><w:left w:w="80" w:type="dxa"/><w:right w:w="80" w:type="dxa"/></w:tblCellMar></w:tblPr><w:tblGrid>${cw.map(w => `<w:gridCol w:w="${w}"/>`).join('')}</w:tblGrid>`;
     const cell = (c, k, hdr) => {
       const segs = (c && typeof c === 'object' && c.omml) ? null : this.htmlSegs(String(c === undefined || c === null ? '' : c));
-      const content = segs ? this.runs(segs, { size: 24, b: hdr }) : '';
-      const para = c && c.omml ? `<w:p><w:pPr><w:pStyle w:val="TableText"/></w:pPr>${c.omml}</w:p>` : `<w:p><w:pPr><w:pStyle w:val="TableText"/>${hdr ? '<w:jc w:val="center"/>' : ''}</w:pPr>${content}</w:p>`;
-      return `<w:tc><w:tcPr><w:tcW w:w="${cw[k]}" w:type="dxa"/>${hdr ? '<w:shd w:val="clear" w:color="auto" w:fill="EDEFF2"/>' : ''}<w:vAlign w:val="center"/></w:tcPr>${para}</w:tc>`;
+      const content = segs ? this.runs(segs, { size: 24 }) : '';
+      const para = c && c.omml ? `<w:p><w:pPr><w:pStyle w:val="TableText"/></w:pPr>${c.omml}</w:p>` : `<w:p><w:pPr><w:pStyle w:val="TableText"/>${hdr || k > 0 ? '<w:jc w:val="center"/>' : ''}</w:pPr>${content}</w:p>`;
+      return `<w:tc><w:tcPr><w:tcW w:w="${cw[k]}" w:type="dxa"/><w:vAlign w:val="center"/></w:tcPr>${para}</w:tc>`;
     };
     if (head) x += `<w:tr><w:trPr><w:tblHeader/><w:cantSplit/></w:trPr>${head.map((c, k) => cell(c, k, true)).join('')}</w:tr>`;
     for (const r of rows) { const rr = r.slice(); while (rr.length < ncol) rr.push(''); x += `<w:tr><w:trPr><w:cantSplit/></w:trPr>${rr.map((c, k) => cell(c, k, false)).join('')}</w:tr>`; }
@@ -131,6 +146,7 @@
 <w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:qFormat/><w:pPr>${o.readable ? '<w:keepLines/>' : ''}<w:widowControl/><w:spacing w:after="0" w:line="${o.line}" w:lineRule="auto"/><w:ind w:firstLine="${o.indent}"/><w:jc w:val="both"/></w:pPr></w:style>
 <w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:qFormat/><w:pPr><w:keepNext/><w:spacing w:before="240" w:after="120"/><w:ind w:firstLine="0"/><w:jc w:val="center"/><w:outlineLvl w:val="0"/></w:pPr><w:rPr><w:b/><w:bCs/><w:caps/></w:rPr></w:style>
 <w:style w:type="paragraph" w:styleId="Heading2"><w:name w:val="heading 2"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:qFormat/><w:pPr><w:keepNext/><w:spacing w:before="200" w:after="80"/><w:jc w:val="left"/><w:outlineLvl w:val="1"/></w:pPr><w:rPr><w:b/><w:bCs/></w:rPr></w:style>
+<w:style w:type="paragraph" w:styleId="Heading3"><w:name w:val="heading 3"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:qFormat/><w:pPr><w:keepNext/><w:spacing w:before="160" w:after="60"/><w:jc w:val="left"/><w:outlineLvl w:val="2"/></w:pPr><w:rPr><w:b/><w:bCs/></w:rPr></w:style>
 <w:style w:type="paragraph" w:styleId="Caption"><w:name w:val="caption"/><w:basedOn w:val="Normal"/><w:qFormat/><w:pPr><w:spacing w:before="120" w:after="0" w:line="360" w:lineRule="auto"/><w:ind w:firstLine="0"/><w:jc w:val="center"/></w:pPr></w:style>
 <w:style w:type="paragraph" w:customStyle="1" w:styleId="TableCaption"><w:name w:val="Table Caption"/><w:basedOn w:val="Normal"/><w:pPr><w:keepNext/><w:spacing w:before="120" w:after="60" w:line="240" w:lineRule="auto"/><w:ind w:firstLine="0"/><w:jc w:val="left"/></w:pPr></w:style>
 <w:style w:type="paragraph" w:customStyle="1" w:styleId="TableText"><w:name w:val="Table Text"/><w:basedOn w:val="Normal"/><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/><w:ind w:firstLine="0"/><w:jc w:val="left"/></w:pPr><w:rPr><w:sz w:val="24"/><w:szCs w:val="24"/></w:rPr></w:style>
