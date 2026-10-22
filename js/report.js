@@ -73,7 +73,7 @@
         case 'tex': {
           const d = opt.explain && root.EXPLAIN ? EXPLAIN.texDesc(it.t) : '';
           if (d) doc.html(symHtml(d.replace(/\.$/, ':')), { keepNext: true });
-          emitMath(doc, it.t, ctx); break;
+          emitMath(doc, it.t, ctx, opt.eqNum ? String(opt._eq = (opt._eq || 0) + 1) : null); break;
         }
         case 'eq': {
           let s = it.lhs;
@@ -83,7 +83,7 @@
           let d = opt.explain && root.EXPLAIN ? EXPLAIN.eqDesc(it.lhs) : '';
           if (it.lhs === 'R_2' && /U_\{вых\}/.test(it.formula || '')) d = 'Сопротивление R2 стабилизатора, задающее выходное напряжение ±15 В для питания операционных усилителей.';
           if (d) doc.html(symHtml(d.replace(/\.$/, ':')), { keepNext: true });
-          emitMath(doc, s, ctx); break;
+          emitMath(doc, s, ctx, opt.eqNum ? String(opt._eq = (opt._eq || 0) + 1) : null); break;
         }
         case 'check':
           doc.raw(`<w:p>${doc.pPr({ indent: 709 })}${doc.runs('Проверка: ')}${ctx.omml(it.tex, true)}${doc.runs(' — ' + lc(it.t || (it.ok ? 'выполняется' : 'не выполняется')).replace(/\.?$/, '.'))}</w:p>`); break;
@@ -244,12 +244,15 @@
     }
     return out;
   }
-  function emitMath(doc, tex, ctx) {
+  /* num — сквозной номер формулы у правого края последней строки основной формулы; null — без номера */
+  function emitMath(doc, tex, ctx, num) {
     const lines = fitMath(tex, ctx);
-    for (const l of lines) {
-      if (l.where) { doc.p('где', { indent: 0, keepNext: true }); continue; }
-      doc.math(ctx.omml(l.t, false, l.size || 28), l !== lines[lines.length - 1] ? { keepNext: true } : {});
-    }
+    const wi = lines.findIndex(l => l.where), lastMain = (wi < 0 ? lines.length : wi) - 1;
+    lines.forEach((l, k) => {
+      if (l.where) { doc.p('где', { indent: 0, keepNext: true }); return; }
+      const om = ctx.omml(l.t, false, l.size || 28), keep = k < lines.length - 1;
+      if (num && k === lastMain) doc.mathNum(om, num, keep); else doc.math(om, keep ? { keepNext: true } : {});
+    });
   }
   /* результаты моделирования связным текстом-перечислением */
   function simLines(id, ctx) {
@@ -324,7 +327,7 @@
 
   async function build(ctx, tabs, T, opt) {
     READ = opt.readable !== false;
-    const doc = new DOCX.Doc({ readable: READ, italVars: true, codePlain: !!opt.codePlain });
+    const doc = new DOCX.Doc({ readable: READ, italVars: true, codePlain: !!opt.codePlain, line: opt.line1 ? 240 : 360 });
     const P = ctx.S.P, R = ctx.S.R;
     titlePage(doc, T, tabs, P);
     tabs.forEach((tab, k) => {
