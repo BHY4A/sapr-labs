@@ -247,6 +247,14 @@
         : `Принятое i меняется: ${g(iA)} → ${g(iB)} (${(iB / iA - 1) * 100 >= 0 ? '+' : ''}${String(+((iB / iA - 1) * 100).toFixed(2)).replace('.', ',')} %), вместе с ним — T<sub>м</sub> и M<sub>вр</sub> и все последующие расчёты.`;
       return { la: 'Как рассчитано', a: body(Ra, Rb), lb: 'До целого', b: body(Rb, Ra), b_on: on, note };
     },
+    eqNum() {
+      const page = on => `<div class="ex-paper"><p>Коэффициент противо-ЭДС из уравнения электрического равновесия:</p><div class="ex-math">c = (U<sub>ном</sub> − I<sub>ном</sub>R)/Ω<sub>ном</sub> = 2,273 В·с/рад${on ? '<span class="ex-no">(3)</span>' : ''}</div></div>`;
+      return { la: 'Без номеров (как в методичке)', a: page(false), lb: 'С номерами', b: page(true), b_on: !!S.T.eqNum };
+    },
+    line1() {
+      const t = 'Электропривод рассчитывается по паспортным данным двигателя и параметрам нагрузки: сначала выбираются двигатель и редуктор, затем настраиваются контуры регулирования тока, скорости и положения.';
+      return { la: 'Интервал 1,5', a: `<div class="ex-paper lh15"><p>${t}</p></div>`, lb: 'Интервал 1,0', b: `<div class="ex-paper lh10"><p>${t}</p></div>`, b_on: !!S.T.line1 };
+    },
     logo() {
       const page = l => `<div class="ex-paper title">${l ? '<b class="ex-logo">КНИТУ</b>' : ''}<p>МИНОБРНАУКИ РОССИИ</p><p>Федеральное государственное бюджетное образовательное учреждение высшего образования</p><p>«Казанский национальный исследовательский технологический университет»</p></div>`;
       return { la: 'Без логотипа', a: page(false), lb: 'С логотипом', b: page(true), b_on: !!S.T.logo };
@@ -401,7 +409,7 @@
             ${sel('C1', 'Конденсатор C1 регулятора', 'T<sub>рс2</sub> = R2·C1', capOpts())}
           </div>
         </section>
-        <section class="dsec">
+        <section class="dsec set set-calc" data-set="настройки расчёта">
           <h2>3. Методика расчёта</h2>
           <p class="dlead">Как переводить и округлять величины. Вариант «как в методичке» воспроизводит её приближённые числа, точный — даёт полную точность.</p>
           <div class="opts">
@@ -413,7 +421,7 @@
           <details class="adv"><summary>Константы методики (ТП, датчики, регуляторы)</summary><div class="in"><div class="form-grid">${ADV.map(f => fld(f[0], f[1], f[2], f[3], P[f[0]], +L.defaults()[f[0]] !== +P[f[0]] && !(f[0] === 'T1zh' && P.T1zh === 'auto'))).join('')}</div>
             <p class="dhint">По умолчанию — значения из примеров методички: γ = 30°, I<sub>d,гр</sub> = 0,2·I<sub>ном</sub>, p<sub>(1)</sub> = 10 %, K<sub>I</sub> = 2,5, K<sub>в</sub> = 0,33, R<sub>д1</sub> = 10 кОм, T<sub>ф</sub> = 0,01 с, N = 10, T<sub>0</sub> = 0,001 с.</p></div></details>
         </section>
-        <section class="dsec">
+        <section class="dsec set set-rep" data-set="настройки отчёта">
           <h2>4. Отчёт и файлы</h2>
           <h3>Титульный лист</h3>
           <div class="form-grid fg4">
@@ -438,7 +446,7 @@
           <div class="dact"><button class="btn" id="zip-all">${dlIcon()} Архив ЛР 1–6 (.zip)</button></div>
           <p class="dhint">Архив: все скрипты MATLAB и программы CoDeSys по работам, отчёты Word (отдельные и единый), полный расчёт в HTML, графики PNG и данные CSV.</p>
         </section>
-        <section class="dsec">
+        <section class="dsec set set-saves" data-set="сохранения">
           <h2>5. Сохранения</h2>
           <p class="dlead">Текущее состояние запоминается автоматически и восстанавливается при следующем открытии сайта; отдельно ведётся автосохранение — к нему можно вернуться, если загрузили не тот слот. Чтобы держать несколько наборов (например, свой вариант и вариант одногруппника), сохраните их в слоты: в слот попадают все параметры, выбранные элементы, методика расчёта и данные отчёта.</p>
           <div class="opts slots" id="slots">${slotsHtml()}</div>
@@ -696,7 +704,7 @@
     main.innerHTML = `<article class="sheet">
       <header class="sheet-head"><div><div class="eyebrow">Лабораторная работа № ${no}</div><h1>${esc(TITLES[tab])}</h1><p class="lead">${leadText(tab)}</p></div>${stamp(no)}</header>
       <div class="sheet-body rep"><div class="kpis">${kpis(tab)}</div><p class="calc-hint">${ICON_COPY} у каждой формулы копирует её в формате MathML — в Word вставляется как редактируемое уравнение (Ctrl+V). Если вставилось текстом, используйте «Специальная вставка → Только текст». Кнопка «TeX» копирует LaTeX.</p>
-        <div class="opts chk-bar"><div class="opt"><div class="opt-t"><b>Сверка с ручным расчётом</b><span id="chk-sum">${CHK.on ? '' : 'Под каждой формулой появится поле для вашего значения: утилита сравнит его и подскажет причину расхождения — округление, перевод градусов, другой двигатель или ошибка в подстановке.'}</span></div><div class="opt-c" style="display:flex;gap:10px;align-items:center">${CHK.on ? '<button class="btn" id="chk-clr">Очистить</button>' : ''}<label class="sw"><input type="checkbox" id="chk-on" ${CHK.on ? 'checked' : ''}><span class="track" aria-hidden="true"></span><span class="sr">Сверка</span></label></div></div></div>${renderItems(rep.items, tab)}${simHints(tab)}${filesPanel(tab)}
+        <div class="opts chk-bar"><div class="opt"><div class="opt-t"><b>Сверка с ручным расчётом</b><span id="chk-sum">${CHK.on ? '' : 'Под каждой формулой появится поле для вашего значения: утилита сравнит его и подскажет причину расхождения — округление, перевод градусов, другой двигатель или ошибка в подстановке.'}</span></div><div class="opt-c" style="display:flex;gap:10px;align-items:center">${CHK.on ? '<button class="btn" id="chk-clr">Очистить</button>' : ''}<label class="sw"><input type="checkbox" id="chk-on" ${CHK.on ? 'checked' : ''}><span class="track" aria-hidden="true"></span><span class="sr">Сверка</span></label></div>${CHK.on || !window.SUITE || !SUITE.chkEx ? '' : SUITE.chkEx('c = (U<sub>ном</sub> − I<sub>ном</sub>R)/Ω<sub>ном</sub> = 2,273 В·с/рад', '2,27')}</div></div>${renderItems(rep.items, tab)}${simHints(tab)}${filesPanel(tab)}
         <div style="display:flex;justify-content:space-between;gap:8px;margin-top:22px;flex-wrap:wrap">${+no > 1 ? `<button class="btn" data-go="lr${+no - 1}">← ЛР № ${+no - 1}</button>` : '<span></span>'}${+no < 6 ? `<button class="btn" data-go="lr${+no + 1}">ЛР № ${+no + 1} →</button>` : ''}</div>
       </div></article>`;
     $$('[data-go]').forEach(b => b.onclick = () => go(b.dataset.go));

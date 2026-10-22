@@ -116,7 +116,7 @@
       Uz: 10, dUw: 10, Uos: 10, Ua: 10,
       f: 50, mph: 3, p: 6, gamma: 30, kId: 0.2, xa: 0, p1: 10, KI: 2.5, Kv: 0.33,
       Rd1: 10000, Tf0: 0.01, Nr: 10, T0: 0.001, T1zh: 'auto',
-      roundManual: true, roundGear: true, deg57: 0, dec: -1,
+      roundManual: true, roundGear: true, deg57: 57, dec: -1,
       motor: 'auto', tach: 3, vt: 6, C1: 'auto', C2: 'auto',
       lr5mode: 'auto'
     };
