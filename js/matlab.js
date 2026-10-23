@@ -370,7 +370,7 @@ fprintf('Запас по амплитуде %.3g дБ (w = %.4g), запас п�
 %% Переходные характеристики (CST)
 Phi = feedback(sys1*sys2*sys3, sys4);           % Ω/Uкс
 figure('Name', 'Рис. 3.2. Ω(t) по сигналу задания'); step(Uz*Phi, 0.5); grid on;
-S = stepinfo(Uz*Phi);
+S = stepinfo(Uz*Phi, 'SettlingTimeThreshold', 0.05);
 fprintf('sigma = %.2f %%, t_н (по 4.7TΣ) = %.4g c\\n', S.Overshoot, 4.7*TS);
 % по моменту сопротивления: Mc0 = -${m(R.P.Mc)} Н*м, Uкс = 0
 Wd  = tf(KMc*[Te 1], [0.1*Te 1]);
@@ -382,9 +382,11 @@ figure('Name', 'Рис. 3.3. Ω(t) по моменту сопротивлени�
       s += `
 %% RC-элементы ПИД-регулятора (рис. 3.9)
 C2 = ${m(rc.C2)}; C1 = ${m(rc.C1)};          % Ф (табл. П.6)
-R3 = Trc1/C2;  R2 = Trc2/C1;  R1 = (R3 - R2*Krc)/Krc;
+R3 = Trc1/C2;  R2 = Trc2/C1;
+R2n = ${m(rc.R2)}; R3n = ${m(rc.R3)};  % номиналы E192
+R1 = (R3n - R2n*Krc)/Krc;              % по номиналам R2, R3 — чтобы Kрс сохранился
 fprintf('R3 = %.4g Ом, R2 = %.4g Ом, R1 = %.4g Ом\\n', R3, R2, R1);
-R1n = ${m(rc.R1)}; R2n = ${m(rc.R2)}; R3n = ${m(rc.R3)};  % номиналы E192
+R1n = ${m(rc.R1)};
 fprintf('Krc по номиналам = %.4g\\n', R3n/(R1n+R2n));
 `;
     }
@@ -517,7 +519,7 @@ figure('Name', 'Рис. 5.2. ЛАЧХ регулятора положения, �
 legend('W_{рп}(s) точная', 'аппроксимация'); title('ЛАЧХ регулятора положения, ν = 2');
 L2 = Wrp2a*sys8;  Phi2 = feedback(L2, 1);
 figure('Name', 'Рис. 5.3. α(t), ν = 2'); step(Phi2, 4); grid on; title('Переходная характеристика по заданию, ν = 2');
-S2 = stepinfo(Phi2); fprintf('ν=2: sigma = %.1f %%, tп = %.3g c\\n', S2.Overshoot, S2.SettlingTime);
+S2 = stepinfo(Phi2, 'SettlingTimeThreshold', 0.05); fprintf('ν=2: sigma = %.1f %%, tп (5 %%) = %.3g c\\n', S2.Overshoot, S2.SettlingTime);
 t = (0:1e-3:4)';
 e2 = lsim(feedback(1, L2), Emax*t.^2/2, t);
 fprintf('ν=2: ошибка при Emax*t^2/2: %.4g рад = %.3g угл.мин (треб. <= %g)\\n', e2(end), e2(end)*${P.deg57 ? '57' : '180/pi'}*60, dAE);
@@ -553,7 +555,7 @@ figure('Name', 'Рис. 5.6. ЛАЧХ регулятора положения, �
 legend('W_{рп}(s) точная', 'аппроксимация'); title('ЛАЧХ регулятора положения, ν = 1');
 L1 = Wrp1a*sys8;  Phi1 = feedback(L1, 1);
 figure('Name', 'Рис. 5.7. α(t), ν = 1'); step(Phi1, 2); grid on; title('Переходная характеристика по заданию, ν = 1');
-S1 = stepinfo(Phi1); fprintf('ν=1: sigma = %.1f %%, tп = %.3g c\\n', S1.Overshoot, S1.SettlingTime);
+S1 = stepinfo(Phi1, 'SettlingTimeThreshold', 0.05); fprintf('ν=1: sigma = %.1f %%, tп (5 %%) = %.3g c\\n', S1.Overshoot, S1.SettlingTime);
 e1 = lsim(feedback(1, L1), Wmax*t, t);
 fprintf('ν=1: ошибка при Wmax*t: %.4g рад = %.3g угл.мин (треб. <= %g)\\n', e1(end), e1(end)*${P.deg57 ? '57' : '180/pi'}*60, dAW);
 figure('Name', 'Рис. 5.8. Ошибка при Ωmax·t'); plot(t, e1); xlabel('t, c'); ylabel('\\Delta\\alpha, рад'); title('Ошибка при линейно возрастающем задании');
