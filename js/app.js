@@ -208,7 +208,7 @@
   /* «что меняется»: оба варианта настройки рядом, текущий выделен */
   function exHtml(key) {
     const d = PV[key]();
-    const box = (lbl, body, on) => `<div class="ex${on ? ' on' : ''}"><div class="ex-h">${lbl}${on ? '<span>сейчас</span>' : ''}</div><div class="ex-b">${body}</div></div>`;
+    const box = (lbl, body, on) => `<div class="ex${on ? ' on' : ''}"><div class="ex-h"><span class="ex-l">${lbl}</span>${on ? '<span class="ex-now">сейчас</span>' : ''}</div><div class="ex-b">${body}</div></div>`;
     if (d.table) return `<div class="ex on ex-wide"><div class="ex-b">${d.table}</div></div>`;
     if (d.items) return `<div class="ex-multi" style="--n:${d.items.length}">${d.items.map(it => box(it.l, it.body, it.on)).join('')}</div>`;
     return box(d.la, d.a, !d.b_on) + box(d.lb, d.b, d.b_on) + (d.note ? `<p class="ex-note">${d.note}</p>` : '');
@@ -269,7 +269,7 @@
     },
     codePlain() {
       const code = 'x1 := 2.8788*x12 − 2.7609*x22 + dU;\nUr := −0.8017*x12 + 13.175*dU;\nout := Ur;';
-      return { la: 'Courier New', a: `<div class="ex-paper"><pre class="mono">${code}</pre></div>`, lb: 'Times New Roman', b: `<div class="ex-paper"><pre class="serif">${code}</pre></div>`, b_on: !!S.T.codePlain };
+      return { la: 'Times New Roman', a: `<div class="ex-paper"><pre class="serif">${code}</pre></div>`, lb: 'Courier New', b: `<div class="ex-paper"><pre class="mono">${code}</pre></div>`, b_on: !S.T.codePlain };
     },
     watermark() {
       const fig = w => `<div class="ex-paper fig"><svg viewBox="0 0 300 110" preserveAspectRatio="none"><path d="M30 8V100H295" fill="none" stroke="#7d8996"/><path d="M30 100 L48 35 Q62 4 80 22 T120 30 T170 27 L295 27" fill="none" stroke="#0072BD" stroke-width="2"/></svg>${w ? '<div class="ex-wm"><b>Замените рисунком из MATLAB</b><span>Что вставить: переходная характеристика контура скорости.</span><span>Откуда: модель LR3_model.slx — Scope «Omega».</span></div>' : ''}<p class="cap">Рисунок 3.2 — Переходная характеристика</p></div>`;
