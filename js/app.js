@@ -28,7 +28,7 @@
     org: 'МИНОБРНАУКИ РОССИИ\nФедеральное государственное бюджетное образовательное учреждение\nвысшего образования\n«Казанский национальный исследовательский технологический университет»\n(ФГБОУ ВО «КНИТУ»)',
     dept: '', discipline: 'Системы автоматизированного проектирования', kind: 'лабораторной работе', kindPlural: 'лабораторным работам',
     group: '741-15', student: '', teacher: 'Малев Н. А.', city: 'Казань', year: String(new Date().getFullYear()),
-    logo: true, explain: true, listings: false, readable: true, watermark: true, codePlain: true, eqNum: false, line1: false
+    logo: true, explain: true, listings: false, readable: true, watermark: true, codePlain: true, codeNoCm: false, eqNum: false, line1: false
   };
   function loadT() { let t = null; try { t = JSON.parse(localStorage.getItem('ep-title') || 'null'); } catch (e) { t = null; } S.T = Object.assign({}, T_DEF, t || {}); if (S.T.discipline === 'Системы управления электроприводов' || S.T.discipline === 'Конструирование роботов и робототехнических систем') S.T.discipline = T_DEF.discipline; }
   function saveT() { try { localStorage.setItem('ep-title', JSON.stringify(S.T)); } catch (e) { /* ignore */ } autoSave(); }
@@ -271,6 +271,11 @@
       const code = 'x1 := 2.8788*x12 − 2.7609*x22 + dU;\nUr := −0.8017*x12 + 13.175*dU;\nout := Ur;';
       return { la: 'Times New Roman', a: `<div class="ex-paper"><pre class="serif">${code}</pre></div>`, lb: 'Courier New', b: `<div class="ex-paper"><pre class="mono">${code}</pre></div>`, b_on: !S.T.codePlain };
     },
+    codeNoCm() {
+      const src = "% ПИ-регулятор скорости, Wрс = Kрс(Tрс·s + 1)/(Tрс·s)\nKrs = 12.5;   % коэффициент регулятора\nTrs = Tm;\nfprintf('σ = %.1f %%\\n', s);   % вывод σ";
+      const pre = s => `<div class="ex-paper"><pre class="mono">${esc(s)}</pre></div>`;
+      return { la: 'С комментариями', a: pre(src), lb: 'Без комментариев', b: pre(G.strip(src)), b_on: !!S.T.codeNoCm };
+    },
     watermark() {
       const fig = w => `<div class="ex-paper fig"><svg viewBox="0 0 300 110" preserveAspectRatio="none"><path d="M30 8V100H295" fill="none" stroke="#7d8996"/><path d="M30 100 L48 35 Q62 4 80 22 T120 30 T170 27 L295 27" fill="none" stroke="#0072BD" stroke-width="2"/></svg>${w ? '<div class="ex-wm"><b>Замените рисунком из MATLAB</b><span>Что вставить: переходная характеристика контура скорости.</span><span>Откуда: модель LR3_model.slx — Scope «Omega».</span></div>' : ''}<p class="cap">Рисунок 3.2 — Переходная характеристика</p></div>`;
       return { la: 'Без подложки', a: fig(false), lb: 'С подложкой', b: fig(true), b_on: !!S.T.watermark };
@@ -435,6 +440,7 @@
             ${optRow('Пояснения к формулам', 'Перед каждой формулой — что считается и зачем.', sw('explain'))}
             ${optRow('Листинги программ MATLAB', 'Скрипты работы в конце раздела «Ход работы».', sw('listings'))}
             ${optRow('Шрифт программного кода', 'Листинги MATLAB и CoDeSys.', seg('T', 'codePlain', !!S.T.codePlain, [[true, 'Times New Roman'], [false, 'Courier New']], 'bool'))}
+            ${optRow('Комментарии в коде MATLAB', 'Скрипты .m на сайте, в архивах и в листингах отчёта. «Без комментариев» убирает строки «%&nbsp;…», блоки %{убирает строки «% …», блоки %{ … %}nbsp;…убирает строки «% …», блоки %{ … %}nbsp;%} и пояснения после кода; текст в кавычках (форматы fprintf, подписи графиков) и сам код не меняются. Программы CoDeSys не затрагиваются.', seg('T', 'codeNoCm', !!S.T.codeNoCm, [[false, 'С комментариями'], [true, 'Без комментариев']], 'bool'))}
             ${optRow('Подложка на рисунках', '«Замените рисунком из MATLAB» — что и откуда вставить.', sw('watermark'))}
             ${optRow('Номера формул', 'Сквозные номера (1), (2)… у правого края строки — не путаются со ссылками на формулы методички вида (1.11). Выключено — без номеров, как в методичке.', sw('eqNum'))}
             ${optRow('Межстрочный интервал', 'Основной текст отчёта; титульный лист не меняется.', seg('T', 'line1', !!S.T.line1, [[false, '1,5'], [true, '1,0']], 'bool'))}
@@ -905,13 +911,16 @@
   }
   let codeSeq = 0;
   const CODE = {};
+  /* код MATLAB с комментариями или без — по настройке «Комментарии в коде MATLAB» */
+  const mcode = (src, lang) => S.T.codeNoCm && (lang || 'matlab') === 'matlab' ? G.strip(src) : src;
   function codeBlock(src, name, lang) {
+    src = mcode(src, lang);
     const id = 'code' + (++codeSeq); CODE[id] = { src, name };
     return `<div class="code"><div class="code-head"><span class="fn">${esc(name)}</span><span class="acts"><button class="btn sm" data-copy="${id}">Копировать</button><button class="btn sm" data-dl="${id}">Скачать</button></span></div><pre class="src">${hl(src, lang)}</pre></div>`;
   }
   function labFiles(tab) {
     const R = S.R;
-    const f = (path, desc, gen, lang) => ({ path, desc, gen, lang: lang || 'matlab' });
+    const f = (path, desc, gen, lang) => ({ path, desc, gen: () => mcode(gen(), lang), lang: lang || 'matlab' });
     switch (tab) {
       case 'lr1': return [f('LR1/lr1_raschet.m', 'Расчёт двигателя, ТП, тахогенератора и ВТ (вывод в Command Window)', () => G.lr1(R))];
       case 'lr2': return [f('LR2/lr2_raschet.m', 'Ошибки по формулам (2.1)–(2.2), Ω(t) средствами Control System Toolbox', () => G.lr2(R)), f('LR2/lr2_model.m', 'Строит и запускает модель Simulink рис. 2.1 (lr2_model.slx), выводит значения Display', () => G.lr2model(R))];
@@ -935,7 +944,7 @@
     'lr5_raschet.m': { figs: ['lr5_zh', 'lr5_bode_pid', 'lr5_step_pid', 'lr5_err_pid', 'lr5_bode_id', 'lr5_step_id', 'lr5_err_id'], result: 'Желаемые ЛАЧХ, регуляторы положения и их проверка для ν = 2 и ν = 1.' },
     'lr5_model_pid.m': { figs: ['lr5_step_pid', 'lr5_err_pid', 'lr5_mc_pid'], result: 'Модель рис. 5.5: три опыта — шаг, εmax·t²/2, момент.' },
     'lr5_model_id.m': { figs: ['lr5_step_id', 'lr5_err_id', 'lr5_mc_id'], result: 'Модель рис. 5.10: три опыта — шаг, Ωmax·t, момент.' },
-    'lr6_raschet.m': { result: 'Коэффициенты цифровых регуляторов положения (сверьте с «ожидаемыми» в комментариях) и ЛАЧХ регуляторов.' },
+    'lr6_raschet.m': { get result() { return 'Коэффициенты цифровых регуляторов положения (сверьте с ' + (S.T.codeNoCm ? 'расчётом выше' : '«ожидаемыми» в комментариях') + ') и ЛАЧХ регуляторов.'; } },
     'lr6_model_pid.m': { figs: ['lr6_step_pid', 'lr6_err_pid', 'lr6_mc_pid'], result: 'Модель рис. 6.1 с цифровыми РП и РС.' },
     'lr6_model_id.m': { figs: ['lr6_step_id', 'lr6_err_id', 'lr6_mc_id'], result: 'Модель рис. 6.5.' },
     'PLC_PRG_RP2.st': { run: 'вставить в PLC_PRG проекта CoDeSys', result: 'Цифровой ПИД-регулятор положения (ν = 2).' },
@@ -1292,7 +1301,7 @@
     const meas = document.createElement('div'); meas.style.cssText = 'position:absolute;left:-20000px;top:0;visibility:hidden;white-space:nowrap;font-size:18.67px';
     document.body.appendChild(meas);
     const measure = t => { meas.innerHTML = katex.renderToString(texify(t), { displayMode: true, throwOnError: false, strict: 'ignore' }); const k = meas.querySelector('.katex'); return k ? k.getBoundingClientRect().width : 0; };
-    const ctx = { S, L, omml, png, simRows, simLines: true, isTexCell: TEXCELL, cellTex, labFiles, measure };
+    const ctx = { S, L, omml, png, simRows, simLines: true, isTexCell: TEXCELL, cellTex, labFiles, mcode, measure };
     try { return await REPORT.build(ctx, tabs, S.T, { explain: S.T.explain, listings: S.T.listings, readable: S.T.readable, codePlain: S.T.codePlain, eqNum: !!S.T.eqNum, line1: !!S.T.line1 }); } finally { meas.remove(); }
   }
   function docxName(tabs) { return 'Otchet_' + (tabs.length > 1 ? 'LR1-6' : tabs[0].toUpperCase()) + '_var' + S.P.variant + '.docx'; }
