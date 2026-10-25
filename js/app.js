@@ -529,7 +529,7 @@
     let h = '', fig = 0; const seen = {};
     for (const it of items) {
       switch (it.k) {
-        case 'h': h += `<h2>${esc(it.t)}</h2>`; break;
+        case 'h': h += `<h2>${esc(it.t)}</h2>` + (window.MDOC ? MDOC.theory(tab, it.t) : ''); break;
         case 'p': h += `<p${it.lead ? ' class="lead-in"' : ''}>${pw(it.t)}</p>`; break;
         case 'note': h += `<div class="note ${it.kind}">${pw(it.t)}</div>`; break;
         case 'tex': h += calcCard(it.t, window.EXPLAIN ? EXPLAIN.texDesc(it.t) : ''); break;
