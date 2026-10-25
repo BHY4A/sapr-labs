@@ -258,39 +258,28 @@ new_system(mdl); open_system(mdl);
   };
   const toWs = v => ({ VariableName: `'${v}'`, SaveFormat: `'Structure With Time'`, MaxDataPoints: `'inf'` });
 
-  // общий фрагмент: контур скорости (вход — сигнал в порт Sum_e/1)
-  function speedLoop(md, R, opt) {
-    // opt.digital, opt.row0
-    const o = R.lr1, r0 = opt.row0 || 1, c0 = opt.col0 || 1;
-    md.add('Sum_e', LIB.sum, c0, r0, { Inputs: `'+-'` }, { w: 30, h: 36 });
-    let col = c0 + 1;
-    if (opt.digital) {
-      md.add('Discrete State-Space', LIB.dss, col, r0, { A: 'mat2str(A_rc, 12)', B: 'mat2str(B_rc, 12)', C: 'mat2str(C_rc, 12)', D: 'mat2str(D_rc, 12)', SampleTime: 'num2str(T0)' }, { w: 110 });
-      md.add('Zero-Order Hold', LIB.zoh, col + 1, r0, { SampleTime: 'num2str(T0)' });
-      md.ln('Sum_e/1', 'Discrete State-Space/1').ln('Discrete State-Space/1', 'Zero-Order Hold/1');
-      md._rcOut = 'Zero-Order Hold/1'; col += 2;
-    } else if (o.caseA) {
-      md.add('Gain', LIB.gain, col, r0, { Gain: 'num2str(Krc, 10)' });
-      md.add('Transfer Fcn1', LIB.tf, col, r0 + 1, { Numerator: 'num2str(Krc, 10)', Denominator: 'mat2str([Trc1 0], 10)' }, { w: 90 });
-      md.add('Sum_pi', LIB.sum, col + 1, r0, { Inputs: `'++'` }, { w: 30 });
-      md.add('Transfer Fcn', LIB.tf, col + 2, r0, { Numerator: 'mat2str([Trc2 1], 10)', Denominator: 'mat2str([Trc3 1], 10)' }, { w: 90 });
-      md.ln('Sum_e/1', 'Gain/1').ln('Sum_e/1', 'Transfer Fcn1/1').ln('Gain/1', 'Sum_pi/1').ln('Transfer Fcn1/1', 'Sum_pi/2').ln('Sum_pi/1', 'Transfer Fcn/1');
-      md._rcOut = 'Transfer Fcn/1'; col += 3;
-    } else {
-      md.add('W_rc', LIB.tf, col, r0, { Numerator: 'mat2str(num_rc, 10)', Denominator: 'mat2str(den_rc, 10)' }, { w: 120 });
-      md.ln('Sum_e/1', 'W_rc/1'); md._rcOut = 'W_rc/1'; col += 1;
+  /* модель Simulink из той же схемы, что нарисована на сайте (diagrams.js): имена, параметры,
+   * взаимное расположение и связи блоков совпадают; блоки To Workspace — только в модели */
+  const DGM = () => root.DIAG || (typeof require !== 'undefined' ? require('./diagrams.js') : null);
+  const KPOS = 1.5;
+  function fromScheme(name, d) {
+    const md = new Model(name), k = KPOS;
+    let x0 = Infinity, y0 = Infinity;
+    for (const id of d.order) { const p = d.pos(id); x0 = Math.min(x0, p[0]); y0 = Math.min(y0, p[1]); }
+    const P = (v, ax) => Math.round((v - (ax ? y0 : x0)) * k) + 30;
+    for (const id of d.order) {
+      const b = d.b[id]; if (!b.lib) continue;
+      const [l, t, r, bt] = d.pos(id);
+      md.b.push({ nm: id, lib: b.lib, pos: [P(l), P(t, 1), P(r), P(bt, 1)], params: b.mp || {}, opt: { left: !!b.o.flip } });
     }
-    md.add('Transfer Fcn2', LIB.tf, col, r0, { Numerator: 'num2str(Ktp, 10)', Denominator: 'mat2str([Ttp 1], 10)' }, { w: 80 });
-    md.add('Gain1', LIB.gain, col + 1, r0, { Gain: 'num2str(Kdv, 10)' });
-    md.add('Sum_m', LIB.sum, col + 2, r0, { Inputs: `'+-'` }, { w: 30 });
-    md.add('Transfer Fcn3', LIB.tf, col + 3, r0, { Numerator: "'1'", Denominator: 'mat2str([Te*Tm Tm 1], 10)' }, { w: 120 });
-    md.add('Gain2', LIB.gain, col + 1, r0 + 2, { Gain: 'num2str(KMc, 10)' });
-    md.add('Transfer Fcn5', LIB.tf, col + 2, r0 + 2, { Numerator: 'mat2str([Te 1], 10)', Denominator: 'mat2str([0.1*Te 1], 10)' }, { w: 80 });
-    md.add('Transfer Fcn4', LIB.tf, col + 1, r0 + 3, { Numerator: 'num2str(Kos, 10)', Denominator: 'mat2str([Tf 1], 10)' }, { w: 80, left: true });
-    md.ln(md._rcOut, 'Transfer Fcn2/1').ln('Transfer Fcn2/1', 'Gain1/1').ln('Gain1/1', 'Sum_m/1')
-      .ln('Gain2/1', 'Transfer Fcn5/1').ln('Transfer Fcn5/1', 'Sum_m/2').ln('Sum_m/1', 'Transfer Fcn3/1')
-      .ln('Transfer Fcn3/1', 'Transfer Fcn4/1').ln('Transfer Fcn4/1', 'Sum_e/2');
-    md._W = 'Transfer Fcn3/1'; md._colEnd = col + 4;
+    for (const L of d.lines) if (!L.free) md.ln(L.src + '/' + L.sk, L.dst + '/' + L.dk);
+    const used = {};
+    for (const x of d.extra || []) {
+      const [, , r, bt] = d.pos(x.src), n = used[x.src] = (used[x.src] || 0) + 1;
+      md.b.push({ nm: x.id, lib: x.lib, pos: [P(r) + 20, P(bt, 1) + 15 + 45 * (n - 1), P(r) + 110, P(bt, 1) + 45 + 45 * (n - 1)], params: x.mp, opt: {} });
+      md.ln(x.src + '/' + x.sk, x.id + '/1');
+    }
+    return md;
   }
 
   function simRun(vars, stop) {
@@ -301,27 +290,7 @@ save_system(mdl);
 
   /* ---------------- модель ЛР2 ---------------- */
   function lr2model(R) {
-    const md = new Model('lr2_model');
-    md.add('Step', LIB.step, 0, 1, { Time: "'0'", After: 'num2str(Uz)' }, { w: 40 });
-    md.add('Sum', LIB.sum, 1, 1, { Inputs: `'+-'` }, { w: 30 });
-    md.add('Transfer Fcn', LIB.tf, 2, 1, { Numerator: 'num2str(Ktp, 10)', Denominator: 'mat2str([Ttp 1], 10)' }, { w: 80 });
-    md.add('Sum1', LIB.sum, 3, 1, { Inputs: `'+-'` }, { w: 30 });
-    md.add('Transfer Fcn2', LIB.tf, 4, 1, { Numerator: 'num2str(1/R, 10)', Denominator: 'mat2str([Te 1], 10)' }, { w: 80 });
-    md.add('Sum2', LIB.sum, 5, 1, { Inputs: `'+-'` }, { w: 30 });
-    md.add('Transfer Fcn1', LIB.tf, 6, 1, { Numerator: 'num2str(R/(c*Tm), 10)', Denominator: "'[1 0]'" }, { w: 80 });
-    md.add('Gain', LIB.gain, 4, 0, { Gain: 'num2str(c, 10)' }, { left: true });
-    md.add('Step1', LIB.step, 3, 2, { Time: "'1'", After: 'num2str(Mc0)' }, { w: 40 });
-    md.add('Gain1', LIB.gain, 4, 2, { Gain: 'num2str(1/(i*c*eta), 10)' });
-    md.add('Transfer Fcn3', LIB.tf, 4, 3, { Numerator: 'num2str(Kos, 10)', Denominator: 'mat2str([Tf 1], 10)' }, { w: 80, left: true });
-    md.add('Scope', LIB.scope, 8, 1, {}, { w: 30 });
-    md.add('Display', LIB.disp, 2, 0, {}, { w: 80 });
-    md.add('w_out', LIB.tows, 8, 2, toWs('w_lr2'), { w: 60 });
-    md.add('e_out', LIB.tows, 2, -1 + 3, toWs('e_lr2'), { w: 60 });
-    md.ln('Step/1', 'Sum/1').ln('Sum/1', 'Transfer Fcn/1').ln('Transfer Fcn/1', 'Sum1/1').ln('Gain/1', 'Sum1/2')
-      .ln('Sum1/1', 'Transfer Fcn2/1').ln('Transfer Fcn2/1', 'Sum2/1').ln('Step1/1', 'Gain1/1').ln('Gain1/1', 'Sum2/2')
-      .ln('Sum2/1', 'Transfer Fcn1/1').ln('Transfer Fcn1/1', 'Gain/1').ln('Transfer Fcn1/1', 'Transfer Fcn3/1')
-      .ln('Transfer Fcn3/1', 'Sum/2').ln('Transfer Fcn1/1', 'Scope/1').ln('Transfer Fcn1/1', 'w_out/1')
-      .ln('Sum/1', 'Display/1').ln('Sum/1', 'e_out/1');
+    const md = fromScheme('lr2_model', DGM().lr2(R));
     return header('ЛР №2. Модель Simulink нескорректированного контура скорости (рис. 2.1)', R) + params(R) + `
 %% Построение модели
 ` + md.code() + simRun(null, 2) + `
@@ -393,13 +362,7 @@ fprintf('Krc по номиналам = %.4g\\n', R3n/(R1n+R2n));
     return s + savePng;
   }
   function lr3model(R) {
-    const md = new Model('lr3_model');
-    md.add('Step', LIB.step, 0, 1, { Time: "'0'", After: 'num2str(Uz_step)' }, { w: 40 });
-    md.add('Step1', LIB.step, 0, 3, { Time: "'0'", After: 'num2str(Mc_step)' }, { w: 40 });
-    speedLoop(md, R, { row0: 1, col0: 1 });
-    md.add('Scope', LIB.scope, md._colEnd, 1, {}, { w: 30 });
-    md.add('w_out', LIB.tows, md._colEnd, 2, toWs('w_lr3'), { w: 60 });
-    md.ln('Step/1', 'Sum_e/1').ln('Step1/1', 'Gain2/1').ln(md._W, 'Scope/1').ln(md._W, 'w_out/1');
+    const md = fromScheme('lr3_model', DGM().speedChain(R, false));
     return header('ЛР №3. Модель Simulink контура скорости с аналоговым регулятором (рис. 3.10)', R) + params(R) + regParams(R) + `
 Uz_step = Uz; Mc_step = 0;
 ` + md.code() + simRun(null, 0.5) + `
@@ -459,13 +422,7 @@ figure('Name', 'Рис. 4.1. Переходная характеристика �
 ` + savePng + fallbacks;
   }
   function lr4model(R) {
-    const md = new Model('lr4_model');
-    md.add('Step', LIB.step, 0, 1, { Time: "'0'", After: 'num2str(Uz)' }, { w: 40 });
-    md.add('Step1', LIB.step, 0, 3, { Time: "'0'", After: "'0'" }, { w: 40 });
-    speedLoop(md, R, { row0: 1, col0: 1, digital: true });
-    md.add('Scope', LIB.scope, md._colEnd, 1, {}, { w: 30 });
-    md.add('w_out', LIB.tows, md._colEnd, 2, toWs('w_lr4'), { w: 60 });
-    md.ln('Step/1', 'Sum_e/1').ln('Step1/1', 'Gain2/1').ln(md._W, 'Scope/1').ln(md._W, 'w_out/1');
+    const md = fromScheme('lr4_model', DGM().speedChain(R, true));
     const ss = R.lr4.ss4;
     return header('ЛР №4. Модель Simulink контура скорости с цифровым регулятором (рис. 4.7)', R) + params(R) + regParams(R) + `
 T0 = ${m(R.P.T0)};
@@ -473,8 +430,8 @@ A_rc = ${mmat(ss.A)};
 B_rc = ${mmat(ss.B)};
 C_rc = ${mmat(ss.C)};
 D_rc = ${mmat(ss.D)};
-% Блок Discrete State-Space сам выполняет квантование сигнала с периодом T0,
-% поэтому модель квантователя (Switch + Pulse Generator) из методички не обязательна.
+Uz_step = Uz; Mc_step = 0;
+% квантователь, как на рис. 4.7: Switch пропускает сигнал ошибки в моменты импульсов Pulse Generator (период T0)
 ` + md.code() + simRun(null, 0.5) + `
 ${plotStyle}out = sim(mdl, 'StopTime', '0.5');  w = out.get('w_lr4');
 t1 = w.time; W1 = w.signals.values;
@@ -564,63 +521,7 @@ figure('Name', 'Рис. 5.8. Ошибка при Ωmax·t'); plot(t, e1); xlabel
 ` + savePng;
   }
   function posModel(R, kind, digital) {
-    const name = (digital ? 'lr6' : 'lr5') + '_model_' + kind;
-    const md = new Model(name);
-    // входные воздействия
-    md.add('Step', LIB.step, 0, 0, { Time: "'0'", After: "'1'" }, { w: 40 });
-    md.add('k_step', LIB.gain, 1, 0, { Gain: "'1'" }, { w: 50 });
-    md.add('Clock', LIB.clock, 0, 1, {}, { w: 40 });
-    if (kind === 'pid') {
-      md.add('Product', LIB.prod, 1, 1, { Inputs: "'2'" }, { w: 40 });
-      md.add('k_in', LIB.gain, 2, 1, { Gain: "'0'" }, { w: 50 });
-      md.ln('Clock/1', 'Product/1').ln('Clock/1', 'Product/2').ln('Product/1', 'k_in/1');
-    } else {
-      md.add('k_in', LIB.gain, 2, 1, { Gain: "'0'" }, { w: 50 });
-      md.ln('Clock/1', 'k_in/1');
-    }
-    md.add('Sum_az', LIB.sum, 3, 0, { Inputs: `'++'` }, { w: 30 });
-    md.add('Sum_a', LIB.sum, 4, 0, { Inputs: `'+-'` }, { w: 30 });
-    md.add('Gain4', LIB.gain, 5, 0, { Gain: 'num2str(Kdp, 10)' });
-    md.ln('Step/1', 'k_step/1').ln('k_step/1', 'Sum_az/1').ln('k_in/1', 'Sum_az/2').ln('Sum_az/1', 'Sum_a/1').ln('Sum_a/1', 'Gain4/1');
-    let rpOut;
-    if (digital) {
-      md.add('Discrete State-Space1', LIB.dss, 6, 0, { A: 'mat2str(A_rp, 12)', B: 'mat2str(B_rp, 12)', C: 'mat2str(C_rp, 12)', D: 'mat2str(D_rp, 12)', SampleTime: 'num2str(T0)' }, { w: 110 });
-      md.add('Zero-Order Hold1', LIB.zoh, 7, 0, { SampleTime: 'num2str(T0)' });
-      md.ln('Gain4/1', 'Discrete State-Space1/1').ln('Discrete State-Space1/1', 'Zero-Order Hold1/1');
-      rpOut = 'Zero-Order Hold1/1';
-    } else if (kind === 'pid') {
-      md.add('Gain3', LIB.gain, 6, 0, { Gain: 'num2str(Krp, 10)' });
-      md.add('Transfer Fcn7', LIB.tf, 6, 1, { Numerator: 'num2str(Krp/T1, 10)', Denominator: "'[1 0]'" }, { w: 70 });
-      md.add('Sum_rp', LIB.sum, 7, 0, { Inputs: `'++'` }, { w: 30 });
-      md.add('Transfer Fcn6', LIB.tf, 8, 0, { Numerator: 'mat2str([T2 1], 10)', Denominator: 'mat2str([T3 1], 10)' }, { w: 90 });
-      md.ln('Gain4/1', 'Gain3/1').ln('Gain4/1', 'Transfer Fcn7/1').ln('Gain3/1', 'Sum_rp/1').ln('Transfer Fcn7/1', 'Sum_rp/2').ln('Sum_rp/1', 'Transfer Fcn6/1');
-      rpOut = 'Transfer Fcn6/1';
-    } else {
-      md.add('Gain3', LIB.gain, 6, 0, { Gain: 'num2str(Krp, 10)' });
-      md.add('Transfer Fcn7', LIB.tf, 7, 0, { Numerator: 'mat2str([T2 1], 10)', Denominator: 'mat2str([T1 1], 10)' }, { w: 90 });
-      md.add('Transfer Fcn6', LIB.tf, 8, 0, { Numerator: 'mat2str([T3 1], 10)', Denominator: 'mat2str([T4 1], 10)' }, { w: 90 });
-      md.ln('Gain4/1', 'Gain3/1').ln('Gain3/1', 'Transfer Fcn7/1').ln('Transfer Fcn7/1', 'Transfer Fcn6/1');
-      rpOut = 'Transfer Fcn6/1';
-    }
-    speedLoop(md, R, { row0: 3, col0: 1, digital });
-    md.ln(rpOut, 'Sum_e/1');
-    md.add('Transfer Fcn8', LIB.tf, md._colEnd, 3, { Numerator: "'1'", Denominator: 'mat2str([i 0], 10)' }, { w: 70 });
-    md.ln(md._W, 'Transfer Fcn8/1').ln('Transfer Fcn8/1', 'Sum_a/2');
-    // возмущение
-    if (kind === 'pid') {
-      md.add('k_mc', LIB.gain, 2, 6, { Gain: "'0'" }, { w: 50 });
-      md.ln('Product/1', 'k_mc/1');
-    } else {
-      md.add('k_mc', LIB.gain, 2, 6, { Gain: "'0'" }, { w: 50 });
-      md.ln('Clock/1', 'k_mc/1');
-    }
-    md.ln('k_mc/1', 'Gain2/1');
-    md.add('Scope', LIB.scope, md._colEnd + 1, 3, {}, { w: 30 });
-    md.add('a_out', LIB.tows, md._colEnd + 1, 4, toWs('a_pos'), { w: 60 });
-    md.add('e_out', LIB.tows, 5, 1, toWs('e_pos'), { w: 60 });
-    md.add('Display', LIB.disp, 5, 2, {}, { w: 90 });
-    md.ln('Transfer Fcn8/1', 'Scope/1').ln('Transfer Fcn8/1', 'a_out/1').ln('Sum_a/1', 'e_out/1').ln('Sum_a/1', 'Display/1');
-    return md;
+    return fromScheme((digital ? 'lr6' : 'lr5') + '_model_' + kind, DGM().pos(R, kind, digital));
   }
   function lr5model(R, kind) {
     const P = R.P, a = kind === 'pid' ? R.lr5.ap2 : R.lr5.ap1;
@@ -636,10 +537,12 @@ ${regp}
   }
   function runsPos(kind, inGain, mcGain, tag, P) {
     const nu = kind === 'pid' ? 2 : 1;
+    // ν = 2: εmax·t²/2 = Ramp(t)·Ramp1((εmax/2)·t), Mc0·t²/2 = Ramp2·Ramp3; ν = 1: Ωmax·t = Ramp, Mc0·t = Ramp1
+    const rIn = kind === 'pid' ? 'Ramp1' : 'Ramp', rMc = kind === 'pid' ? 'Ramp3' : 'Ramp1';
     const lr = tag === 'ЛР5' ? 5 : 6, f0 = lr === 5 ? (nu === 2 ? 3 : 7) : (nu === 2 ? 1 : 4);
     return `
 ${plotStyle}% 1) ступенчатое задание αз = 1 рад
-set_param([mdl '/k_step'], 'Gain', '1'); set_param([mdl '/k_in'], 'Gain', '0'); set_param([mdl '/k_mc'], 'Gain', '0');
+set_param([mdl '/Step'], 'After', '1'); set_param([mdl '/${rIn}'], 'Slope', '0'); set_param([mdl '/${rMc}'], 'Slope', '0');
 out = sim(mdl, 'StopTime', '4'); a = out.get('a_pos');
 t = a.time; A = a.signals.values;
 [Am, km] = max(A); sigma = (Am - 1)*100;
@@ -647,16 +550,16 @@ ts = t(find(abs(A - 1) > 0.05, 1, 'last'));
 fprintf('${tag}, ν=${nu}: sigma = %.1f %%, время регулирования (5%%) = %.3g c\\n', sigma, ts);
 figure('Name', 'Рис. ${lr}.${f0}. α(t), ν = ${nu}'); plot(t, A); xlabel('t, c'); ylabel('\\alpha(t), рад'); title('Переходная характеристика по задающему воздействию');
 % 2) ${kind === 'pid' ? 'квадратично возрастающее задание εmax*t^2/2' : 'линейно возрастающее задание Ωmax*t'}
-set_param([mdl '/k_step'], 'Gain', '0'); set_param([mdl '/k_in'], 'Gain', num2str(${inGain}, 10));
+set_param([mdl '/Step'], 'After', '0'); set_param([mdl '/${rIn}'], 'Slope', num2str(${inGain}, 10));
 out = sim(mdl, 'StopTime', '4'); e = out.get('e_pos');
 fprintf('${tag}, ν=${nu}: установившаяся ошибка = %.4g рад = %.3g угл. мин\\n', e.signals.values(end), e.signals.values(end)*${P.deg57 ? '57' : '180/pi'}*60);
 figure('Name', 'Рис. ${lr}.${f0 + 1}. Ошибка, ν = ${nu}'); plot(e.time, e.signals.values); xlabel('t, c'); ylabel('\\Delta\\alpha, рад'); title('Ошибка при ${kind === 'pid' ? 'квадратично' : 'линейно'} возрастающем задании');
 % 3) ${kind === 'pid' ? 'квадратично' : 'линейно'} возрастающий момент сопротивления
-set_param([mdl '/k_in'], 'Gain', '0'); set_param([mdl '/k_mc'], 'Gain', num2str(${mcGain}, 10));
+set_param([mdl '/${rIn}'], 'Slope', '0'); set_param([mdl '/${rMc}'], 'Slope', num2str(${mcGain}, 10));
 out = sim(mdl, 'StopTime', '4'); e = out.get('e_pos');
 fprintf('${tag}, ν=${nu}: моментная составляющая ошибки = %.4g рад = %.3g угл. мин\\n', e.signals.values(end), e.signals.values(end)*${P.deg57 ? '57' : '180/pi'}*60);
 figure('Name', 'Рис. ${lr}.${f0 + 2}. Моментная составляющая ошибки, ν = ${nu}'); plot(e.time, e.signals.values); xlabel('t, c'); ylabel('\\Delta\\alpha^м, рад'); title('Моментная составляющая ошибки');
-set_param([mdl '/k_step'], 'Gain', '1'); set_param([mdl '/k_mc'], 'Gain', '0');
+set_param([mdl '/Step'], 'After', '1'); set_param([mdl '/${rMc}'], 'Slope', '0');
 save_system(mdl);
 ` + savePng;
   }
@@ -723,7 +626,11 @@ D_rp = ${mmat(ss.D)};
 
   /* ---------------- README ---------------- */
   function readme(R) {
-    const P = R.P;
+    const P = R.P, labs = R.labs || ['lr1', 'lr2', 'lr3', 'lr4', 'lr5', 'lr6'];
+    return readmeText(R, P).split('\n').filter(l => { const k = l.match(/^  LR(\d)\//); return !k || labs.includes('lr' + k[1]); }).join('\n')
+      .replace('РАБОТЫ 1–6', 'РАБОТЫ ' + labs.map(x => x.slice(2)).join(', ')).replace('Otchet_LR1-6', 'Otchet_LR' + labs.map(x => x.slice(2)).join('-'));
+  }
+  function readmeText(R, P) {
     return `ЭЛЕКТРОПРИВОД: ЛАБОРАТОРНЫЕ РАБОТЫ 1–6. ВАРИАНТ ${P.variant}
 =====================================================
 
@@ -752,7 +659,7 @@ D_rp = ${mmat(ss.D)};
   LR3/lr3_raschet.m          ПИД-регулятор скорости, ЛЧХ, RC-элементы
   LR3/lr3_model.m            модель рис. 3.10
   LR4/lr4_raschet.m          bilinear, tf2ss, ЛПЧХ, АФЧХ
-  LR4/lr4_model.m            модель рис. 4.7 (Discrete State-Space)
+  LR4/lr4_model.m            модель рис. 4.7 (квантователь Switch + Pulse Generator, Discrete State-Space)
   LR4/PLC_PRG.st             программа цифрового РС
   LR5/lr5_raschet.m          желаемые ЛАЧХ, синтез РП (ν = 2 и ν = 1)
   LR5/lr5_model_pid.m        модель рис. 5.5 (ПИД-РП)
@@ -767,6 +674,11 @@ D_rp = ${mmat(ss.D)};
 
 Примечания:
 ${P.deg57 ? ' * Угловые величины переводятся в радианы, как в методичке, делением на 57.' : ' * Угловые величины переводятся в радианы точно (π/180).'}
+ * Модели *_model.m — те же схемы, что на сайте: те же блоки, имена
+   и расположение; добавлены только блоки To Workspace (w_out, a_out,
+   e_out) для графиков. Задания ЛР5–ЛР6 переключаются параметрами
+   блоков: Step (After), наклоны Ramp1 (εmax/2) и Ramp3 (Mc0/2) для ν = 2,
+   Ramp (Ωmax) и Ramp1 (Mc0) для ν = 1.
  * Канал момента сопротивления в моделях ЛР3–ЛР6: K = R/(i·c²·η),
    звено (Tэs+1)/(0,1Tэs+1) — как блок Transfer Fcn5 методички.
  * Если в MATLAB нет Signal Processing Toolbox, вместо bilinear/tf2ss

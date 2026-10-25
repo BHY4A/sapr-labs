@@ -85,6 +85,7 @@
   Report.prototype.table = function (head, rows, caption) { this.items.push({ k: 'table', head, rows, caption }); return this; };
   Report.prototype.code = function (t, lang, title) { this.items.push({ k: 'code', t, lang: lang || 'matlab', title }); return this; };
   // пометки для отчёта Word: элемент только для сайта / иной текст в отчёте
+  Report.prototype.lead = function (t) { this.items.push({ k: 'p', t, lead: true, web: true }); return this; };
   Report.prototype.webOnly = function () { this.items[this.items.length - 1].web = true; return this; };
   Report.prototype.rep = function (t) { this.items[this.items.length - 1].rep = t; return this; };
   Report.prototype.plot = function (id, title) { this.items.push({ k: 'plot', id, title }); return this; };
@@ -118,7 +119,7 @@
       Rd1: 10000, Tf0: 0.01, Nr: 10, T0: 0.001, T1zh: 'auto',
       roundManual: true, roundGear: true, deg57: 57, dec: -1,
       motor: 'auto', tach: 3, vt: 6, C1: 'auto', C2: 'auto',
-      lr5mode: 'auto'
+      lr5mode: 'auto', allLabs: false
     };
   }
   function fromVariant(no) {
@@ -265,6 +266,11 @@
     const caseA = Tm >= 4 * Te;
     L1.check(`T_м=${n(Tm)}\\ \\text{с} ${caseA ? '\\ge' : '<'} 4T_э=${n(4 * Te)}\\ \\text{с}`, true,
       caseA ? 'Случай «а» (Tм ≥ 4Tэ): ПФ двигателя — апериодическое звено 2-го порядка.' : 'Случай «б» (Tм < 4Tэ): ПФ двигателя — колебательное звено (комплексно-сопряжённые корни).');
+    const labsCase = caseA ? ['lr1', 'lr2', 'lr3', 'lr5'] : ['lr1', 'lr2', 'lr4', 'lr6'];
+    R.labsCase = labsCase; R.labs = P.allLabs ? ['lr1', 'lr2', 'lr3', 'lr4', 'lr5', 'lr6'] : labsCase;
+    const labsTail = P.allLabs ? ' Сейчас показаны все шесть работ (настройка «Состав работ» на вкладке «Исходные данные»).' : ' Остальные работы скрыты; показать их можно настройкой «Состав работ» на вкладке «Исходные данные».';
+    L1.note((caseA ? 'Для этого двигателя по методичке выполняются ЛР № 1, 2, 3 и 5: аналоговый ПИД-регулятор скорости (пример 3.1) и аналоговый регулятор положения (пример 5.1). ЛР № 4 и 6 (цифровые регуляторы) относятся к случаю T<sub>м</sub> < 4T<sub>э</sub>, пример 4.1.'
+      : 'Для этого двигателя по методичке выполняются ЛР № 1, 2, 4 и 6: регулятор скорости с комплексными нулями реализуется программно (пример 4.1), регулятор положения — цифровой (пример 6.1). ЛР № 3 и 5 (аналоговые регуляторы) относятся к случаю T<sub>м</sub> ≥ 4T<sub>э</sub>, пример 3.1.') + labsTail).webOnly();
     const Imax = P.KI * P.Kv * Inom;
     L1.eq('I_{max}', 'K_I K_в I_{ном}', `${n(P.KI)}\\cdot ${n(P.Kv)}\\cdot ${n(Inom)}`, Imax, 'А');
     const Uobr = Math.SQRT2 * U2l;
@@ -363,56 +369,45 @@
 
     /* ======================= ЛР3 ======================= */
     const L3 = new Report();
+    let Trc1, Trc2, Trc3, TS, KKK, Krc, Wrc;
+    const synthRC = Rp => {
+      Rp.tex(`W_{рс}(s)=\\dfrac{T_мT_эs^2+T_мs+1}{2K_{тп}K_{дв}K_{ос}T_\\Sigma s\\,(T_{рс3}s+1)}`);
+      if (caseA) {
+        const disc = Math.sqrt(1 - 4 * Te / Tm);
+        Trc1 = rs(2 * Te / (1 - disc)); Trc2 = rs(2 * Te / (1 + disc));
+        Rp.p('Так как T<sub>м</sub> ≥ 4T<sub>э</sub>, числитель раскладывается на вещественные множители: W<sub>рс</sub>(s) = K<sub>рс</sub>(T<sub>рс1</sub>s+1)(T<sub>рс2</sub>s+1) / (T<sub>рс1</sub>s(T<sub>рс3</sub>s+1)).');
+        Rp.eq('T_{рс1}', '\\dfrac{2T_э}{1-\\sqrt{1-\\dfrac{4T_э}{T_м}}}', `\\dfrac{2\\cdot ${n(Te)}}{1-\\sqrt{1-\\dfrac{4\\cdot ${n(Te)}}{${n(Tm)}}}}`, 2 * Te / (1 - disc), 'с');
+        Rp.eq('T_{рс2}', '\\dfrac{2T_э}{1+\\sqrt{1-\\dfrac{4T_э}{T_м}}}', `\\dfrac{2\\cdot ${n(Te)}}{1+\\sqrt{1-\\dfrac{4\\cdot ${n(Te)}}{${n(Tm)}}}}`, 2 * Te / (1 + disc), 'с');
+      } else {
+        Trc1 = Tm; Trc2 = Te;
+        Rp.p('Так как T<sub>м</sub> < 4T<sub>э</sub>, корни числителя комплексно-сопряжённые; принимаем T<sub>рс1</sub> = T<sub>м</sub>, T<sub>рс2</sub> = T<sub>э</sub> (как в примере 4.1).');
+        Rp.eq('T_{рс1}', 'T_м', null, Trc1, 'с');
+        Rp.eq('T_{рс2}', 'T_э', null, Trc2, 'с');
+      }
+      Trc3 = rs(Trc2 / P.Nr);
+      Rp.eq('T_{рс3}', '\\dfrac{T_{рс2}}{N}', `\\dfrac{${n(Trc2)}}{${n(P.Nr)}}`, Trc3, 'с');
+      TS = Ttp + Tf + Trc3;
+      Rp.eq('T_\\Sigma', 'T_{тп}+T_ф+T_{рс3}', `${n(Ttp)}+${n(Tf)}+${n(Trc3)}`, TS, 'с');
+      KKK = 2 * Ktp * Kdv * Kos * TS;
+      Krc = rs(Trc1 / KKK);
+      if (caseA) Rp.eq('K_{рс}', '\\dfrac{T_{рс1}}{2K_{тп}K_{дв}K_{ос}T_\\Sigma}', `\\dfrac{${n(Trc1)}}{2\\cdot ${n(Ktp)}\\cdot ${n(Kdv)}\\cdot ${n(Kos)}\\cdot ${n(TS)}}`, Trc1 / KKK, '');
+      else Rp.eq('2K_{тп}K_{дв}K_{ос}T_\\Sigma', '', `2\\cdot ${n(Ktp)}\\cdot ${n(Kdv)}\\cdot ${n(Kos)}\\cdot ${n(TS)}`, KKK, 'с');
+      if (caseA) Wrc = NC.tf([Krc * Trc1 * Trc2, Krc * (Trc1 + Trc2), Krc], [Trc1 * Trc3, Trc1, 0]);
+      else Wrc = NC.tf([Tm * Te, Tm, 1], [KKK * Trc3, KKK, 0]);
+      Rp.tex('W_{рс}(s)=' + tfTex(Wrc));
+    };
     L3.h('3.1. Синтез ПИД-регулятора скорости (настройка на оптимум по модулю)');
-    L3.tex(`W_{рс}(s)=\\dfrac{T_мT_эs^2+T_мs+1}{2K_{тп}K_{дв}K_{ос}T_\\Sigma s\\,(T_{рс3}s+1)}`);
-    let Trc1, Trc2;
-    if (caseA) {
-      const disc = Math.sqrt(1 - 4 * Te / Tm);
-      Trc1 = rs(2 * Te / (1 - disc)); Trc2 = rs(2 * Te / (1 + disc));
-      L3.p('Так как T<sub>м</sub> ≥ 4T<sub>э</sub>, числитель раскладывается на вещественные множители: W<sub>рс</sub>(s) = K<sub>рс</sub>(T<sub>рс1</sub>s+1)(T<sub>рс2</sub>s+1) / (T<sub>рс1</sub>s(T<sub>рс3</sub>s+1)).');
-      L3.eq('T_{рс1}', '\\dfrac{2T_э}{1-\\sqrt{1-\\dfrac{4T_э}{T_м}}}', `\\dfrac{2\\cdot ${n(Te)}}{1-\\sqrt{1-\\dfrac{4\\cdot ${n(Te)}}{${n(Tm)}}}}`, 2 * Te / (1 - disc), 'с');
-      L3.eq('T_{рс2}', '\\dfrac{2T_э}{1+\\sqrt{1-\\dfrac{4T_э}{T_м}}}', `\\dfrac{2\\cdot ${n(Te)}}{1+\\sqrt{1-\\dfrac{4\\cdot ${n(Te)}}{${n(Tm)}}}}`, 2 * Te / (1 + disc), 'с');
-    } else {
-      Trc1 = Tm; Trc2 = Te;
-      L3.p('Так как T<sub>м</sub> < 4T<sub>э</sub>, корни числителя комплексно-сопряжённые; принимаем T<sub>рс1</sub> = T<sub>м</sub>, T<sub>рс2</sub> = T<sub>э</sub> (как в примере 4.1).');
-      L3.eq('T_{рс1}', 'T_м', null, Trc1, 'с');
-      L3.eq('T_{рс2}', 'T_э', null, Trc2, 'с');
-    }
-    const Trc3 = rs(Trc2 / P.Nr);
-    L3.eq('T_{рс3}', '\\dfrac{T_{рс2}}{N}', `\\dfrac{${n(Trc2)}}{${n(P.Nr)}}`, Trc3, 'с');
-    const TS = Ttp + Tf + Trc3;
-    L3.eq('T_\\Sigma', 'T_{тп}+T_ф+T_{рс3}', `${n(Ttp)}+${n(Tf)}+${n(Trc3)}`, TS, 'с');
-    const KKK = 2 * Ktp * Kdv * Kos * TS;
-    const Krc = rs(Trc1 / KKK);
-    if (caseA) L3.eq('K_{рс}', '\\dfrac{T_{рс1}}{2K_{тп}K_{дв}K_{ос}T_\\Sigma}', `\\dfrac{${n(Trc1)}}{2\\cdot ${n(Ktp)}\\cdot ${n(Kdv)}\\cdot ${n(Kos)}\\cdot ${n(TS)}}`, Trc1 / KKK, '');
-    else L3.eq('2K_{тп}K_{дв}K_{ос}T_\\Sigma', '', `2\\cdot ${n(Ktp)}\\cdot ${n(Kdv)}\\cdot ${n(Kos)}\\cdot ${n(TS)}`, KKK, 'с');
-    let Wrc;
-    if (caseA) Wrc = NC.tf([Krc * Trc1 * Trc2, Krc * (Trc1 + Trc2), Krc], [Trc1 * Trc3, Trc1, 0]);
-    else Wrc = NC.tf([Tm * Te, Tm, 1], [KKK * Trc3, KKK, 0]);
-    L3.tex('W_{рс}(s)=' + tfTex(Wrc));
+    L3.lead('Контур скорости настраивается на оптимум по модулю: регулятор компенсирует большие постоянные времени двигателя T<sub>м</sub>, T<sub>э</sub>, а разомкнутый контур приводится к виду 1/(2T<sub>Σ</sub>s(T<sub>Σ</sub>s+1)) (3.19). Отсюда ПФ регулятора (3.20); малая T<sub>рс3</sub> добавляется для физической реализуемости, её относят к T<sub>Σ</sub>.');
+    synthRC(L3);
     const Wtp = NC.tf([Ktp], [Ttp, 1]);
     const Wdv = NC.tf([Kdv], [Te * Tm, Tm, 1]);
     const Wos = NC.tf([Kos], [Tf, 1]);
     const Wks = NC.series(Wrc, Wtp, Wdv, Wos);
-    L3.diagram('d_lr3', 'ССДМ контура скорости с аналоговым регулятором (рис. 3.10)');
-    L3.h('3.2. ПФ разомкнутого контура скорости');
-    L3.tex('W_{кс}(s)=W_{рс}(s)\\,W_{тп}(s)\\,W_{дв}(s)\\,W_{ос}(s)=' + tfTex(Wks));
     const mg3 = NC.margins(w0 => NC.freq(Wks, w0), 1e-2, 1e6);
-    L3.table(['Показатель', 'Значение', 'Требование ОМ'], [
-      ['Запас по фазе θз', fnum(mg3.Pm, 3) + '°', '≈ 63…65°'],
-      ['Частота среза ωс', fnum(mg3.wcp, 4) + ' рад/с', '≈ 1/(2TΣ) = ' + fnum(1 / (2 * TS), 4)],
-      ['Запас по амплитуде Lз', fnum(mg3.Gm, 3) + ' дБ', '≤ 20 дБ'],
-      ['Частота ω<sub>π</sub>', fnum(mg3.wcg, 4) + ' рад/с', '']
-    ]);
-    L3.plot('lr3_bode', 'ЛАЧХ и ЛФЧХ разомкнутого контура скорости');
-    L3.eq('t_н^{кс}', '4{,}7T_\\Sigma', `4{,}7\\cdot ${n(TS)}`, 4.7 * TS, 'с');
-    L3.plot('lr3_step', 'Ω(t) по сигналу задания');
-    L3.plot('lr3_dist', 'Ω(t) по моменту сопротивления (Uкс = 0, Mc = −Mc⁰)');
-    L3.simres('sr_lr3', 'Показатели качества по результатам моделирования');
     // RC-элементы
     let rc = null;
     if (caseA) {
-      L3.h('3.3. Электрическая схема и RC-элементы ПИД-регулятора (рис. 3.9)');
+      L3.h('3.2. Электрическая схема и RC-элементы ПИД-регулятора (рис. 3.9)');
       L3.tex('T_{рс1}=R_3C_2;\\quad T_{рс2}=R_2C_1;\\quad T_{рс3}=\\dfrac{R_1R_2C_1}{R_1+R_2};\\quad K_{рс}=\\dfrac{R_3}{R_1+R_2}');
       rc = designRC(Trc1, Trc2, Krc, P);
       L3.p(`Задаём C<sub>2</sub> = ${fnum(rc.C2 * 1e6)} мкФ` + (P.C2 === 'auto' ? ' (подобрана автоматически)' : '') + ` и C<sub>1</sub> = ${fnum(rc.C1 * 1e6)} мкФ` + (P.C1 === 'auto' ? ' (подобрана автоматически)' : '') + ' из табл. П.6.');
@@ -436,13 +431,29 @@
         L3.p('Операционный усилитель — с двуполярным питанием ±15 В (блок питания из п. 1.6).');
       } else L3.note('R1 получилось отрицательным при выбранных ёмкостях — выберите другие C1/C2.', 'bad');
     } else {
-      L3.h('3.3. Схемная реализация');
+      L3.h('3.2. Схемная реализация');
       L3.note('При T<sub>м</sub> < 4T<sub>э</sub> нули регулятора комплексно-сопряжённые и не реализуются схемой рис. 3.9 (она даёт только вещественные постоянные времени R3C2 и R2C1). Такой регулятор реализуется программно — см. ЛР №4 (цифровой ПИД-регулятор).', 'warn');
     }
     const kMc = Rr / (i * c * c * P.eta);
-    L3.h('3.4. Канал момента сопротивления в ССДМ');
+    L3.h('3.3. Моделирование контура скорости (рис. 3.10)');
+    L3.lead('Модель собирается из тех же звеньев, что и расчёт: регулятор, ТП, двигатель и тахогенератор. Момент сопротивления M<sub>c</sub> вводится через коэффициент K<sub>Mc</sub> и форсирующее звено — так он действует на скорость так же, как в уравнениях двигателя (1.4)–(1.5). По модели проверяются перерегулирование и время нарастания, ожидаемые при ОМ.');
     L3.eq('K_{M_c}', '\\dfrac{R}{i\\,c^2\\eta}', `\\dfrac{${n(Rr)}}{${n(i)}\\cdot ${n(c)}^2\\cdot ${n(P.eta)}}`, kMc, '');
-    L3.p('Звено (T<sub>э</sub>s+1)/(0,1T<sub>э</sub>s+1) — реализуемая форма форсирующего звена (как блок Transfer Fcn5 на рис. 3.10). Коэффициент получен из уравнений (1.4)–(1.5) для схемы, где сумматор стоит после K<sub>дв</sub>.');
+    L3.p('Звено (T<sub>э</sub>s+1)/(0,1T<sub>э</sub>s+1) — реализуемая форма форсирующего звена (блок Transfer Fcn5 на рис. 3.10).');
+    L3.diagram('d_lr3', 'ССДМ контура скорости с аналоговым регулятором (рис. 3.10)');
+    L3.plot('lr3_step', 'Ω(t) по сигналу задания');
+    L3.plot('lr3_dist', 'Ω(t) по моменту сопротивления (Uкс = 0, Mc = −Mc⁰)');
+    L3.eq('t_н^{кс}', '4{,}7T_\\Sigma', `4{,}7\\cdot ${n(TS)}`, 4.7 * TS, 'с');
+    L3.simres('sr_lr3', 'Показатели качества по результатам моделирования');
+    L3.h('3.4. ЛЧХ разомкнутого контура скорости');
+    L3.lead('Запасы устойчивости оцениваются по ЛЧХ разомкнутого контура W<sub>кс</sub>(s) = W<sub>рс</sub>W<sub>тп</sub>W<sub>дв</sub>W<sub>ос</sub> (в MATLAB — sys5 = sys1·sys2·sys3·sys4). При настройке на ОМ запас по фазе около 63°, частота среза около 1/(2T<sub>Σ</sub>).');
+    L3.tex('W_{кс}(s)=W_{рс}(s)\\,W_{тп}(s)\\,W_{дв}(s)\\,W_{ос}(s)=' + tfTex(Wks));
+    L3.table(['Показатель', 'Значение', 'Требование ОМ'], [
+      ['Запас по фазе θз', fnum(mg3.Pm, 3) + '°', '≈ 63…65°'],
+      ['Частота среза ωс', fnum(mg3.wcp, 4) + ' рад/с', '≈ 1/(2TΣ) = ' + fnum(1 / (2 * TS), 4)],
+      ['Запас по амплитуде Lз', fnum(mg3.Gm, 3) + ' дБ', '≤ 20 дБ'],
+      ['Частота ω<sub>π</sub>', fnum(mg3.wcg, 4) + ' рад/с', '']
+    ]);
+    L3.plot('lr3_bode', 'ЛАЧХ и ЛФЧХ разомкнутого контура скорости');
     R.L3 = L3;
     R.lr3 = { Trc1, Trc2, Trc3, TS, Krc, KKK, Wrc, Wtp, Wdv, Wos, Wks, mg3, rc, kMc };
 
@@ -450,12 +461,17 @@
     const L4 = new Report();
     const fs = 1 / P.T0;
     L4.h('4.1. Дискретная аппроксимация регулятора скорости (формула трапеций)');
+    if (!caseA) {
+      L4.lead('Регулятор скорости с комплексными нулями аналоговой схемой рис. 3.9 не реализуется, поэтому он выполняется программно (пример 4.1): сначала находим его ПФ (3.20) при настройке на оптимум по модулю, затем переводим её в z-форму по формуле трапеций (4.3).');
+      synthRC(L4);
+    } else L4.lead('Регулятор скорости из ЛР № 3 переводится в z-форму заменой s по формуле трапеций (4.3): цифровой регулятор с периодом квантования T<sub>0</sub> повторяет аналоговый.');
     L4.tex(`s=\\dfrac{2}{T_0}\\cdot\\dfrac{z-1}{z+1},\\qquad T_0=${n(P.T0)}\\ с,\\quad f_s=\\dfrac{1}{T_0}=${n(fs)}\\ Гц`);
-    L4.tex('W_{рс}(s)=' + tfTex(Wrc));
+    if (caseA) L4.tex('W_{рс}(s)=' + tfTex(Wrc));
     const bz = NC.bilinear(Wrc.num, Wrc.den, fs);
     L4.tex('W_{рс}(z)=' + tfTex(NC.tf(bz.num, bz.den), 'z'));
     const ss4 = NC.tf2ss(bz.num, bz.den);
     L4.h('4.2. Уравнения состояния цифрового регулятора (непосредственное программирование)');
+    L4.lead('Методом непосредственного программирования (рис. 4.6) разностное уравнение W<sub>рс</sub>(z) записывается в векторно-матричной форме: матрицы A, B, C, D (tf2ss) задают и блок Discrete State-Space модели, и программу ПЛК.');
     L4.tex('x[(k+1)T_0]=\\mathbf{A}\\,x(kT_0)+\\mathbf{B}\\,\\Delta u_\\Omega(kT_0);\\qquad u_{рс}(kT_0)=\\mathbf{C}\\,x(kT_0)+\\mathbf{D}\\,\\Delta u_\\Omega(kT_0)');
     L4.tex(matTex('A', ss4.A) + ';\\quad ' + matTex('B', ss4.B) + ';\\quad ' + matTex('C', ss4.C) + ';\\quad ' + matTex('D', ss4.D));
     L4.plot('lr4_reg', 'Переходная характеристика цифрового регулятора скорости');
@@ -467,7 +483,14 @@
     const lamToZ = lam => { const a = [1, lam * P.T0 / 2], b = [1, -lam * P.T0 / 2]; return NC.C.div(a, b); };
     const Wol4 = lam => { const z = lamToZ(lam); return NC.C.mul(WrzF(z), NC.ssEval(Gd, z)); };
     const mg4 = NC.margins(Wol4, 1e-2, 1e6);
-    L4.h('4.3. Логарифмические псевдочастотные характеристики (υ-преобразование)');
+    L4.h('4.3. Моделирование контура скорости с цифровым регулятором (рис. 4.7)');
+    L4.lead('Цифровой регулятор моделируется как в методичке: квантователь (Switch, управляемый Pulse Generator с периодом T<sub>0</sub>), блок Discrete State-Space и экстраполятор нулевого порядка (ЦАП).');
+    L4.diagram('d_lr4', 'ССДМ контура скорости с цифровым регулятором (рис. 4.7)');
+    L4.plot('lr4_step', 'Ω(t) по сигналу задания (цифровой РС)');
+    L4.plot('lr4_dist', 'Ω(t) по моменту сопротивления (цифровой РС)');
+    L4.simres('sr_lr4', 'Показатели качества: цифровой и аналоговый регуляторы');
+    L4.h('4.4. Логарифмические псевдочастотные характеристики (υ-преобразование)');
+    L4.lead('Для цифровой системы частотные характеристики строятся по псевдочастоте: υ-преобразование (4.9) переводит W<sub>кс</sub>(z) в форму, к которой применимы обычные ЛЧХ и критерии запасов устойчивости.');
     L4.tex('z=\\dfrac{1+\\upsilon}{1-\\upsilon},\\quad \\upsilon=j\\dfrac{T_0}{2}\\omega_\\upsilon,\\qquad W_{кс}(z)=W_{рс}(z)\\cdot Z\\left\\{\\dfrac{1-e^{-sT_0}}{s}W_{тп}(s)W_{дв}(s)W_{ос}(s)\\right\\}');
     L4.table(['Показатель', 'Цифровой КС (по ЛПЧХ)', 'Аналоговый КС (ЛР3)'], [
       ['Запас по фазе θз', fnum(mg4.Pm, 3) + '°', fnum(mg3.Pm, 3) + '°'],
@@ -479,11 +502,6 @@
     L4.rep('Для построения ЛПЧХ непрерывная часть контура дискретизирована с экстраполятором нулевого порядка, после чего выполнен переход к абсолютной псевдочастоте ωυ.');
     L4.plot('lr4_bode', 'ЛПЧХ разомкнутого цифрового контура скорости');
     L4.plot('lr4_nyq', 'АФЧХ (псевдочастотная)');
-    L4.h('4.4. Моделирование контура скорости с цифровым регулятором');
-    L4.diagram('d_lr4', 'ССДМ контура скорости с цифровым регулятором (рис. 4.7)');
-    L4.plot('lr4_step', 'Ω(t) по сигналу задания (цифровой РС)');
-    L4.plot('lr4_dist', 'Ω(t) по моменту сопротивления (цифровой РС)');
-    L4.simres('sr_lr4', 'Показатели качества: цифровой и аналоговый регуляторы');
     L4.h('4.5. Рабочая программа цифрового регулятора скорости (CoDeSys, ПЛК154)');
     const st4 = codesys(ss4, 'PLC_PRG', 'Цифровой ПИД-регулятор скорости');
     L4.code(st4, 'st', 'PLC_PRG.st');
@@ -507,16 +525,16 @@
     let T1zhAuto = Math.max(2, KW * Ta / wcLim);
     if (T1zhAuto > 2) T1zhAuto = Math.ceil(T1zhAuto * 2) / 2;
     let T1zh1 = P.T1zh === 'auto' || P.T1zh === '' || P.T1zh == null ? T1zhAuto : +P.T1zh;
-    L5.h('5.1. Желаемые ЛАЧХ и запретная область');
-    L5.eq('K_\\varepsilon', '\\sqrt2\\,\\dfrac{\\varepsilon_{max}}{\\Delta\\alpha_\\varepsilon}', `\\sqrt2\\cdot\\dfrac{${n(P.E)}\\cdot 60}{${n(P.dAE)}}`, Ke, 'с⁻²');
-    L5.eq('\\omega_0', '\\sqrt{K_\\varepsilon}', `\\sqrt{${n(Ke)}}`, w0, 'с⁻¹');
-    L5.eq('K_\\Omega', '\\sqrt2\\,\\dfrac{\\Omega_{max}}{\\Delta\\alpha_\\Omega}', `\\sqrt2\\cdot\\dfrac{${n(P.W)}\\cdot 60}{${n(P.dAW)}}`, KW, 'с⁻¹');
+    L5.h('5.1. Запретная область желаемой ЛАЧХ');
+    L5.lead('Требования к точности (ошибки Δα<sub>Ω</sub> и Δα<sub>ε</sub> при Ω<sub>max</sub> и ε<sub>max</sub>) задают запретную область: желаемая ЛАЧХ разомкнутого контура положения должна проходить не ниже контрольной точки A<sub>к</sub> (рис. 5.1), с запасом 3 дБ.')
     const wk = (P.E) / (P.W);
     L5.eq('\\omega_к', '\\dfrac{\\varepsilon_{max}}{\\Omega_{max}}', `\\dfrac{${n(P.E)}}{${n(P.W)}}`, wk, 'с⁻¹');
-    L5.p('Угловые ошибки переведены в градусы делением на 60, поэтому в формулах K<sub>ε</sub>, K<sub>Ω</sub> присутствует множитель 60.');
     L5.eq('L(\\omega_к)', '20\\lg\\dfrac{\\Omega^2_{max}}{\\varepsilon_{max}\\Delta\\alpha_\\varepsilon}', `20\\lg\\dfrac{${n(P.W)}^2\\cdot 60}{${n(P.E)}\\cdot ${n(P.dAE)}}`, 20 * Math.log10(P.W * P.W * 60 / (P.E * P.dAE)), 'дБ');
-    L5.plot('lr5_zh', 'Запретная область и желаемые ЛАЧХ (ν = 2 и ν = 1)');
     L5.h('5.2. Астатизм второго порядка (ν = 2) — ПИД-регулятор положения');
+    L5.lead('Пример 5.1. Желаемая ПФ (5.6) строится по коэффициенту по ускорению K<sub>ε</sub> и показателю колебательности M; регулятор находится как W<sub>рп</sub> = W<sub>ж</sub>/W<sub>н</sub>, а его ЛАЧХ аппроксимируется асимптотами — получается ПИД-регулятор.');
+    L5.eq('K_\\varepsilon', '\\sqrt2\\,\\dfrac{\\varepsilon_{max}}{\\Delta\\alpha_\\varepsilon}', `\\sqrt2\\cdot\\dfrac{${n(P.E)}\\cdot 60}{${n(P.dAE)}}`, Ke, 'с⁻²');
+    L5.eq('\\omega_0', '\\sqrt{K_\\varepsilon}', `\\sqrt{${n(Ke)}}`, w0, 'с⁻¹');
+    L5.p('Угловые ошибки переведены в градусы делением на 60, поэтому в формулах K<sub>ε</sub>, K<sub>Ω</sub> присутствует множитель 60.');
     L5.tex('W_ж(s)=\\dfrac{K_\\varepsilon(T_{1ж}s+1)}{s^2(T_{2ж}s+1)}');
     L5.eq('T_{1ж}', '\\dfrac{1}{\\omega_0}\\sqrt{\\dfrac{M}{M-1}}', `\\dfrac{1}{${n(w0)}}\\sqrt{\\dfrac{${n(M)}}{${n(M)}-1}}`, Ta, 'с');
     L5.eq('T_{2ж}', '\\dfrac{\\sqrt{M(M-1)}}{\\omega_0(M+1)}', `\\dfrac{\\sqrt{${n(M)}(${n(M)}-1)}}{${n(w0)}(${n(M)}+1)}`, Tb, 'с');
@@ -549,6 +567,8 @@
     L5.simres('sr_lr5_pid', 'Результаты моделирования, ν = 2');
 
     L5.h('5.3. Астатизм первого порядка (ν = 1) — интегро-дифференцирующий регулятор');
+    L5.lead('Пример 5.2. Желаемая ПФ строится по коэффициенту по скорости K<sub>Ω</sub>; T<sub>1ж</sub> выбирается много больше 1/ω<sub>м</sub>, чтобы среднечастотный участок имел максимальный запас по фазе.');
+    L5.eq('K_\\Omega', '\\sqrt2\\,\\dfrac{\\Omega_{max}}{\\Delta\\alpha_\\Omega}', `\\sqrt2\\cdot\\dfrac{${n(P.W)}\\cdot 60}{${n(P.dAW)}}`, KW, 'с⁻¹');
     L5.tex('W_ж(s)=\\dfrac{K_\\Omega(T_{2ж}s+1)}{s(T_{1ж}s+1)(T_{3ж}s+1)}');
     L5.eq('T_{2ж}', '\\dfrac{1}{\\omega_0}\\sqrt{\\dfrac{M}{M-1}}', null, Ta, 'с');
     L5.eq('T_{3ж}', '\\dfrac{\\sqrt{M(M-1)}}{\\omega_0(M+1)}', null, Tb, 'с');
@@ -560,6 +580,7 @@
     if (T1zh1 < 5 / wM) L5.note('T<sub>1ж</sub> выбрана недостаточно большой по сравнению с 1/ω<sub>м</sub>.', 'warn');
     const Wzh1 = NC.tf([KW * Ta, KW], NC.convMany([[T1zh1, 1], [Tb, 1], [1, 0]]));
     L5.tex(`W_ж(s)=\\dfrac{${n(KW)}(${n(Ta)}s+1)}{s(${n(T1zh1)}s+1)(${n(Tb)}s+1)}=` + tfTex(Wzh1));
+    L5.plot('lr5_zh', 'Запретная область и желаемые ЛАЧХ (ν = 2 и ν = 1)');
     const Wrp1x = NC.tfdiv(Wzh1, Wn5);
     L5.tex('W_{рп}(s)=\\dfrac{W_ж(s)}{W_н(s)}=' + tfTex(normTf(Wrp1x)));
     const ap1 = approxID(Wrp1x, Ta, Tb, T1zh1, KW, i, Kos, Kdp, TS, P);
@@ -584,11 +605,7 @@
 
     /* ======================= ЛР6 ======================= */
     const L6 = new Report();
-    L6.h('6.1. Неизменяемая часть (КС настроен на ОМ)');
-    L6.tex('\\Phi^{ом}_{кс}(s)=\\dfrac{(1/K_{ос})(T_фs+1)}{2(T_\\Sigma s)^2+2T_\\Sigma s+1}=\\dfrac{' + n(1 / Kos) + '(' + n(Tf) + 's+1)}{' + n(2 * TS * TS) + 's^2+' + n(2 * TS) + 's+1}');
     const Kn6 = Kdp / (i * Kos);
-    L6.eq('\\dfrac{K_{дп}}{iK_{ос}}', '', `\\dfrac{${n(Kdp)}}{${n(i)}\\cdot ${n(Kos)}}`, Kn6, '');
-    L6.tex(`W_н(s)=\\Phi^{ом}_{кс}(s)\\dfrac{K_{дп}}{is}=\\dfrac{${n(Kn6)}(${n(Tf)}s+1)}{s(${n(2 * TS * TS)}s^2+${n(2 * TS)}s+1)}`);
     const q2 = [2 * TS * TS, 2 * TS, 1];
     // ν = 2
     const K62 = Ke / Kn6;
@@ -596,8 +613,17 @@
     let den62 = NC.convMany([[Tb, 1], [Tf, 1], [1, 0]]);
     const l62 = den62[0]; num62 = num62.map(v => v / l62); den62 = den62.map(v => v / l62);
     const Wrp62 = NC.tf(num62, den62);
-    L6.h('6.2. ν = 2: аналитический синтез и цифровой ПИД-регулятор положения');
+    L6.h('6.1. ν = 2: аналитический синтез и цифровой ПИД-регулятор положения');
+    L6.lead('Пример 6.1. Регулятор находится аналитически, без построения его ЛАЧХ: W<sub>рп</sub>(s) = W<sub>ж</sub>(s)/W<sub>н</sub>(s) (6.1). Затем — формула трапеций и векторно-матричная модель, как для регулятора скорости в ЛР № 4.');
+    L6.eq('K_\\varepsilon', '\\sqrt2\\,\\dfrac{\\varepsilon_{max}}{\\Delta\\alpha_\\varepsilon}', `\\sqrt2\\cdot\\dfrac{${n(P.E)}\\cdot 60}{${n(P.dAE)}}`, Ke, 'с⁻²');
+    L6.eq('\\omega_0', '\\sqrt{K_\\varepsilon}', `\\sqrt{${n(Ke)}}`, w0, 'с⁻¹');
+    L6.eq('T_{1ж}', '\\dfrac{1}{\\omega_0}\\sqrt{\\dfrac{M}{M-1}}', `\\dfrac{1}{${n(w0)}}\\sqrt{\\dfrac{${n(M)}}{${n(M)}-1}}`, Ta, 'с');
+    L6.eq('T_{2ж}', '\\dfrac{\\sqrt{M(M-1)}}{\\omega_0(M+1)}', `\\dfrac{\\sqrt{${n(M)}(${n(M)}-1)}}{${n(w0)}(${n(M)}+1)}`, Tb, 'с');
     L6.tex(`W_ж(s)=\\dfrac{${n(Ke)}(${n(Ta)}s+1)}{s^2(${n(Tb)}s+1)}`);
+    L6.lead('Контур скорости настроен на оптимум по модулю, поэтому неизменяемая часть берётся в аналитическом виде: замкнутый КС Φ<sup>ом</sup><sub>кс</sub>(s), редуктор и датчик положения.');
+    L6.tex('\\Phi^{ом}_{кс}(s)=\\dfrac{(1/K_{ос})(T_фs+1)}{2(T_\\Sigma s)^2+2T_\\Sigma s+1}=\\dfrac{' + n(1 / Kos) + '(' + n(Tf) + 's+1)}{' + n(2 * TS * TS) + 's^2+' + n(2 * TS) + 's+1}');
+    L6.eq('\\dfrac{K_{дп}}{iK_{ос}}', '', `\\dfrac{${n(Kdp)}}{${n(i)}\\cdot ${n(Kos)}}`, Kn6, '');
+    L6.tex(`W_н(s)=\\Phi^{ом}_{кс}(s)\\dfrac{K_{дп}}{is}=\\dfrac{${n(Kn6)}(${n(Tf)}s+1)}{s(${n(2 * TS * TS)}s^2+${n(2 * TS)}s+1)}`);
     L6.tex(`W_{рп}(s)=\\dfrac{W_ж(s)}{W_н(s)}=\\dfrac{K_\\varepsilon iK_{ос}}{K_{дп}}\\cdot\\dfrac{(T_{1ж}s+1)(2T_\\Sigma^2s^2+2T_\\Sigma s+1)}{s(T_{2ж}s+1)(T_фs+1)}`);
     L6.tex('W_{рп}(s)\\ (\\mathrm{minreal})=' + tfTex(Wrp62));
     const bz62 = NC.bilinear(Wrp62.num, Wrp62.den, fs);
@@ -618,7 +644,14 @@
     let den61 = NC.convMany([[T1zh1, 1], [Tb, 1], [Tf, 1]]);
     const l61 = den61[0]; num61 = num61.map(v => v / l61); den61 = den61.map(v => v / l61);
     const Wrp61 = NC.tf(num61, den61);
-    L6.h('6.3. ν = 1: аналитический синтез и цифровой интегро-дифференцирующий регулятор');
+    L6.h('6.2. ν = 1: аналитический синтез и цифровой интегро-дифференцирующий регулятор');
+    L6.lead('Пример 6.2. Желаемая ПФ системы с астатизмом первого порядка — по K<sub>Ω</sub>; T<sub>1ж</sub> ≫ 1/ω<sub>м</sub>. Неизменяемая часть та же, что для ν = 2.');
+    L6.eq('K_\\Omega', '\\sqrt2\\,\\dfrac{\\Omega_{max}}{\\Delta\\alpha_\\Omega}', `\\sqrt2\\cdot\\dfrac{${n(P.W)}\\cdot 60}{${n(P.dAW)}}`, KW, 'с⁻¹');
+    L6.eq('T_{2ж}', '\\dfrac{1}{\\omega_0}\\sqrt{\\dfrac{M}{M-1}}', null, Ta, 'с');
+    L6.eq('T_{3ж}', '\\dfrac{\\sqrt{M(M-1)}}{\\omega_0(M+1)}', null, Tb, 'с');
+    L6.eq('h', '\\dfrac{M+1}{M-1}', `\\dfrac{${n(M)}+1}{${n(M)}-1}`, h, '');
+    L6.eq('\\omega_м', '\\dfrac{1}{T_{3ж}\\sqrt h}', `\\dfrac{1}{${n(Tb)}\\sqrt{${n(h)}}}`, wM, 'с⁻¹');
+    L6.p(`Из условия T<sub>1ж</sub> ≫ 1/ω<sub>м</sub> = ${fnum(1 / wM)} с принимаем T<sub>1ж</sub> = ${fnum(T1zh1)} с.`);
     L6.tex(`W_ж(s)=\\dfrac{${n(KW)}(${n(Ta)}s+1)}{s(${n(T1zh1)}s+1)(${n(Tb)}s+1)}`);
     L6.tex(`W_{рп}(s)=\\dfrac{K_\\Omega iK_{ос}}{K_{дп}}\\cdot\\dfrac{(T_{2ж}s+1)(2T_\\Sigma^2s^2+2T_\\Sigma s+1)}{(T_{1ж}s+1)(T_{3ж}s+1)(T_фs+1)}`);
     L6.tex('W_{рп}(s)\\ (\\mathrm{minreal})=' + tfTex(Wrp61));

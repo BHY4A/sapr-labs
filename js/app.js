@@ -22,6 +22,11 @@
     lr5: 'Синтез аналогового регулятора положения (графоаналитический метод)', lr6: 'Программная реализация регулятора положения'
   };
 
+  /* работы, которые выполняются для текущего двигателя (Tм ≥ 4Tэ: ЛР 1, 2, 3, 5; Tм < 4Tэ: ЛР 1, 2, 4, 6) или все */
+  const ALL_LABS = ['lr1', 'lr2', 'lr3', 'lr4', 'lr5', 'lr6'];
+  const labsOn = () => (S.R && S.R.labs) || ALL_LABS;
+  const labsName = t => t.map(x => x.slice(2)).join(', ');
+
   /* ---------------- состояние ---------------- */
   const S = { P: null, R: null, sims: {}, tab: 'data', err: null, T: null };
   const T_DEF = {
@@ -86,14 +91,14 @@
     const sel = $('#var-sel');
     if (sel.options.length !== 222) sel.innerHTML = D.variants.map(v => `<option value="${v.no}">${v.no}</option>`).join('');
     sel.value = S.P.variant;
-    $$('nav.rail a').forEach(a => a.setAttribute('aria-current', a.dataset.tab === S.tab ? 'page' : 'false'));
+    $$('nav.rail a').forEach(a => { a.setAttribute('aria-current', a.dataset.tab === S.tab ? 'page' : 'false'); if (/^lr/.test(a.dataset.tab)) a.hidden = !labsOn().includes(a.dataset.tab); });
     const R = S.R;
     const foot = $('#rail-foot');
     if (R && foot) foot.innerHTML = `<b>Вариант ${S.P.variant}</b><br>${R.lr1.mo.type}, ${fnum(R.lr1.mo.P)} кВт, ${R.lr1.mo.U} В<br>i = ${fnum(R.lr1.i)} · случай <b>${R.lr1.caseA ? '«а»' : '«б»'}</b><br>T<sub>м</sub> = ${fnum(R.lr1.Tm)} с, T<sub>э</sub> = ${fnum(R.lr1.Te)} с`;
   }
   function stamp(labNo) {
     const R = S.R;
-    return `<table class="stamp" aria-label="Штамп"><tr><td class="k">Работа</td><td class="v">${labNo ? 'ЛР № ' + labNo : 'Данные'}</td><td class="k">Лист</td><td class="v">${labNo} / 6</td></tr>
+    return `<table class="stamp" aria-label="Штамп"><tr><td class="k">Работа</td><td class="v">${labNo ? 'ЛР № ' + labNo : 'Данные'}</td><td class="k">Лист</td><td class="v">${labsOn().indexOf('lr' + labNo) + 1} / ${labsOn().length}</td></tr>
       <tr><td class="k">Вариант</td><td class="v">${S.P.variant}${isEdited() ? '*' : ''}</td><td class="k">Случай</td><td class="v">${R.lr1.caseA ? 'Tм ≥ 4Tэ' : 'Tм < 4Tэ'}</td></tr>
       <tr><td class="k">Двигатель</td><td class="v" colspan="3">${R.lr1.mo.type} ${fnum(R.lr1.mo.P)} кВт, ${R.lr1.mo.U} В</td></tr>
       <tr><td class="k">Редуктор</td><td class="v" colspan="3">i = ${fnum(R.lr1.i)}</td></tr></table>`;
@@ -107,6 +112,7 @@
   function renderTab() {
     const main = $('#main');
     if (S.err) { main.innerHTML = `<div class="sheet"><div class="sheet-body"><div class="note bad" style="margin-top:20px">Ошибка расчёта: ${esc(S.err.message)}. Проверьте исходные данные.</div></div></div>`; return; }
+    if (S.tab !== 'data' && !labsOn().includes(S.tab)) S.tab = 'data';   // работа не выполняется для этого двигателя
     if (S.tab === 'data') renderData(main);
     else renderLab(main, S.tab);
     $$('nav.rail a').forEach(a => a.setAttribute('aria-current', a.dataset.tab === S.tab ? 'page' : 'false'));
@@ -246,6 +252,12 @@
         ? `В этом варианте принятое передаточное число i = ${g(iB)} ${ma.speedOk ? '' : '(i<sub>1</sub> = Ω<sub>ном</sub>/Ω<sub>max</sub>) '}и так целое, поэтому дальше расчёт не меняется — округляется только i<sub>о</sub>: ${g(ma.i0)} → ${g(mb.i0)}. Заметная разница появляется, когда i получается дробным (например, при переводе градусов делением на 57: i = 95,5 → 96).`
         : `Принятое i меняется: ${g(iA)} → ${g(iB)} (${(iB / iA - 1) * 100 >= 0 ? '+' : ''}${String(+((iB / iA - 1) * 100).toFixed(2)).replace('.', ',')} %), вместе с ним — T<sub>м</sub> и M<sub>вр</sub> и все последующие расчёты.`;
       return { la: 'Как рассчитано', a: body(Ra, Rb), lb: 'До целого', b: body(Rb, Ra), b_on: on, note };
+    },
+    allLabs() {
+      const o = S.R.lr1, on = !!S.P.allLabs, cs = S.R.labsCase || ALL_LABS;
+      const list = t => ALL_LABS.map(x => `<span class="ex-lab${t.includes(x) ? '' : ' off'}">ЛР ${x.slice(2)}</span>`).join(' ');
+      const why = TX(`Ваш двигатель ${o.mo.type}: T<sub>м</sub> = ${fnum(o.Tm)} с ${o.caseA ? '≥' : '<'} 4T<sub>э</sub> = ${fnum(4 * o.Te)} с — ${o.caseA ? 'аналоговые регуляторы (примеры 3.1, 5.1)' : 'цифровые регуляторы (примеры 4.1, 6.1)'}.`);
+      return { la: 'По типу двигателя (как в методичке)', a: F(list(cs)) + why, lb: 'Все шесть работ', b: F(list(ALL_LABS)) + TX('Показываются и работы для другого типа двигателя — например, чтобы сравнить аналоговый и цифровой регуляторы.'), b_on: on };
     },
     eqNum() {
       const page = on => `<div class="ex-paper"><p>Коэффициент противо-ЭДС из уравнения электрического равновесия:</p><div class="ex-math">c = (U<sub>ном</sub> − I<sub>ном</sub>R)/Ω<sub>ном</sub> = 2,273 В·с/рад${on ? '<span class="ex-no">(3)</span>' : ''}</div></div>`;
@@ -421,6 +433,7 @@
             ${optRow('Точность вывода чисел', '«Авто» — 4 значащие цифры, целая часть не округляется (114,3; 0,06162; 12356). Цифра — фиксированное число знаков после запятой. На сам расчёт не влияет.', seg('P', 'dec', P.dec === undefined ? -1 : +P.dec, [[-1, 'Авто'], [1, '1'], [2, '2'], [3, '3'], [4, '4'], [5, '5'], [6, '6']], 'num'))}
             ${optRow('Перевод градусов в радианы', 'Для Ω<sub>max</sub>, ε<sub>max</sub>, α<sub>max</sub> и пересчёта ошибок в угловые минуты.', seg('P', 'deg57', P.deg57 ? 57 : 0, [[0, 'Точно, ×π/180'], [57, 'Делением на 57']], 'num'))}
             ${optRow('Промежуточные параметры', 'c, T<sub>м</sub>, T<sub>э</sub>, T<sub>тп</sub>, K<sub>ос</sub>, T<sub>ф</sub>… — до 0,001; параметры регуляторов — до 3 значащих цифр.', seg('P', 'roundManual', !!P.roundManual, [[false, 'Полная точность'], [true, 'Округлять']], 'bool'))}
+            ${optRow('Состав работ', 'По методичке набор работ зависит от двигателя: при T<sub>м</sub> ≥ 4T<sub>э</sub> выполняются ЛР 1, 2, 3, 5 (аналоговые регуляторы), при T<sub>м</sub> < 4T<sub>э</sub> — ЛР 1, 2, 4, 6 (цифровые). Ненужные работы скрываются из меню, отчётов и архива.', seg('P', 'allLabs', !!P.allLabs, [[false, 'По типу двигателя'], [true, 'Все шесть работ']], 'bool'))}
             ${optRow('Передаточное число редуктора', 'В примерах методички округляется до целого: i = 69, i = 882.', seg('P', 'roundGear', !!P.roundGear, [[false, 'Как рассчитано'], [true, 'До целого']], 'bool'))}
           </div>
           <details class="adv"><summary>Константы методики (ТП, датчики, регуляторы)</summary><div class="in"><div class="form-grid">${ADV.map(f => fld(f[0], f[1], f[2], f[3], P[f[0]], +L.defaults()[f[0]] !== +P[f[0]] && !(f[0] === 'T1zh' && P.T1zh === 'auto'))).join('')}</div>
@@ -440,16 +453,16 @@
             ${optRow('Пояснения к формулам', 'Перед каждой формулой — что считается и зачем.', sw('explain'))}
             ${optRow('Листинги программ MATLAB', 'Скрипты работы в конце раздела «Ход работы».', sw('listings'))}
             ${optRow('Шрифт программного кода', 'Листинги MATLAB и CoDeSys.', seg('T', 'codePlain', !!S.T.codePlain, [[true, 'Times New Roman'], [false, 'Courier New']], 'bool'))}
-            ${optRow('Комментарии в коде MATLAB', 'Скрипты .m на сайте, в архивах и в листингах отчёта. «Без комментариев» убирает строки «%&nbsp;…», блоки %{убирает строки «% …», блоки %{ … %}nbsp;…убирает строки «% …», блоки %{ … %}nbsp;%} и пояснения после кода; текст в кавычках (форматы fprintf, подписи графиков) и сам код не меняются. Программы CoDeSys не затрагиваются.', seg('T', 'codeNoCm', !!S.T.codeNoCm, [[false, 'С комментариями'], [true, 'Без комментариев']], 'bool'))}
+            ${optRow('Комментарии в коде MATLAB', 'Скрипты .m на сайте, в архивах и в листингах отчёта. «Без комментариев» убирает строки «%&nbsp;…», блоки %{&nbsp;…&nbsp;%} и пояснения после кода; текст в кавычках (форматы fprintf, подписи графиков) и сам код не меняются. Программы CoDeSys не затрагиваются.', seg('T', 'codeNoCm', !!S.T.codeNoCm, [[false, 'С комментариями'], [true, 'Без комментариев']], 'bool'))}
             ${optRow('Подложка на рисунках', '«Замените рисунком из MATLAB» — что и откуда вставить.', sw('watermark'))}
             ${optRow('Номера формул', 'Сквозные номера (1), (2)… у правого края строки — не путаются со ссылками на формулы методички вида (1.11). Выключено — без номеров, как в методичке.', sw('eqNum'))}
             ${optRow('Межстрочный интервал', 'Основной текст отчёта; титульный лист не меняется.', seg('T', 'line1', !!S.T.line1, [[false, '1,5'], [true, '1,0']], 'bool'))}
             ${optRow('Улучшение читаемости', 'Не разрывать абзацы, списки, листинги и пояснение с формулой между страницами.', sw('readable'))}
           </div>
           <h3>Скачать</h3>
-          <div class="dl-grid"><button class="btn primary dl-all" data-docx="all">${dlIcon()} Единый отчёт по ЛР 1–6 (.docx)</button>${[1, 2, 3, 4, 5, 6].map(k => `<button class="btn" data-docx="lr${k}">${dlIcon()} ЛР № ${k}</button>`).join('')}</div>
+          <div class="dl-grid"><button class="btn primary dl-all" data-docx="all">${dlIcon()} Единый отчёт по ЛР ${labsName(labsOn())} (.docx)</button>${labsOn().map(t => `<button class="btn" data-docx="${t}">${dlIcon()} ЛР № ${t.slice(2)}</button>`).join('')}</div>
           <p class="dhint">Единый отчёт — общий титульный лист, каждая работа с новой страницы; отдельные — по одному на работу.</p>
-          <div class="dact"><button class="btn" id="zip-all">${dlIcon()} Архив ЛР 1–6 (.zip)</button></div>
+          <div class="dact"><button class="btn" id="zip-all">${dlIcon()} Архив ЛР ${labsName(labsOn())} (.zip)</button></div>
           <p class="dhint">Архив: все скрипты MATLAB и программы CoDeSys по работам, отчёты Word (отдельные и единый), полный расчёт в HTML, графики PNG и данные CSV.</p>
         </section>
         <section class="dsec set set-saves" data-set="сохранения">
@@ -474,7 +487,7 @@
     $('#reset-var').onclick = () => { S.P = L.fromVariant(S.P.variant); recompute(); };
     $('#go-lr1').onclick = () => go('lr1');
     $$('#main [data-tkey]').forEach(el => el.addEventListener('change', () => { S.T[el.dataset.tkey] = el.type === 'checkbox' ? el.checked : el.value; saveT(); refreshPv(el.dataset.tkey); }));
-    $$('#main [data-docx]').forEach(b => b.onclick = () => makeDocx(b.dataset.docx === 'all' ? ['lr1', 'lr2', 'lr3', 'lr4', 'lr5', 'lr6'] : [b.dataset.docx], b));
+    $$('#main [data-docx]').forEach(b => b.onclick = () => makeDocx(b.dataset.docx === 'all' ? labsOn() : [b.dataset.docx], b));
     $$('.var-table tr[data-v]').forEach(tr => tr.onclick = () => setVariant(+tr.dataset.v));
   }
   function tfld(key, label, ph) {
@@ -496,7 +509,7 @@
     S.P[k] = v;
     recompute();
   }
-  function setVariant(v) { v = Math.min(222, Math.max(1, v)); const keep = {}; ['roundManual', 'roundGear', 'deg57', 'dec'].forEach(k => keep[k] = S.P[k]); S.P = Object.assign(L.fromVariant(v), keep); recompute(); }
+  function setVariant(v) { v = Math.min(222, Math.max(1, v)); const keep = {}; ['roundManual', 'roundGear', 'deg57', 'dec', 'allLabs'].forEach(k => keep[k] = S.P[k]); S.P = Object.assign(L.fromVariant(v), keep); recompute(); }
 
   /* ---------- вкладки ЛР ---------- */
   function kpis(tab) {
@@ -517,7 +530,7 @@
     for (const it of items) {
       switch (it.k) {
         case 'h': h += `<h2>${esc(it.t)}</h2>`; break;
-        case 'p': h += `<p>${pw(it.t)}</p>`; break;
+        case 'p': h += `<p${it.lead ? ' class="lead-in"' : ''}>${pw(it.t)}</p>`; break;
         case 'note': h += `<div class="note ${it.kind}">${pw(it.t)}</div>`; break;
         case 'tex': h += calcCard(it.t, window.EXPLAIN ? EXPLAIN.texDesc(it.t) : ''); break;
         case 'eq': {
@@ -706,12 +719,12 @@
 
   function renderLab(main, tab) {
     const R = S.R, no = tab.slice(2);
-    const rep = R['L' + no];
+    const rep = R['L' + no], on = labsOn(), k = on.indexOf(tab), prv = on[k - 1], nxt = on[k + 1];
     main.innerHTML = `<article class="sheet">
       <header class="sheet-head"><div><div class="eyebrow">Лабораторная работа № ${no}</div><h1>${esc(TITLES[tab])}</h1><p class="lead">${leadText(tab)}</p></div>${stamp(no)}</header>
       <div class="sheet-body rep"><div class="kpis">${kpis(tab)}</div><p class="calc-hint">${ICON_COPY} у каждой формулы копирует её в формате MathML — в Word вставляется как редактируемое уравнение (Ctrl+V). Если вставилось текстом, используйте «Специальная вставка → Только текст». Кнопка «TeX» копирует LaTeX.</p>
         <div class="opts chk-bar"><div class="opt"><div class="opt-t"><b>Сверка с ручным расчётом</b><span id="chk-sum">${CHK.on ? '' : 'Под каждой формулой появится поле для вашего значения: утилита сравнит его и подскажет причину расхождения — округление, перевод градусов, другой двигатель или ошибка в подстановке.'}</span></div><div class="opt-c" style="display:flex;gap:10px;align-items:center">${CHK.on ? '<button class="btn" id="chk-clr">Очистить</button>' : ''}<label class="sw"><input type="checkbox" id="chk-on" ${CHK.on ? 'checked' : ''}><span class="track" aria-hidden="true"></span><span class="sr">Сверка</span></label></div>${CHK.on || !window.SUITE || !SUITE.chkEx ? '' : SUITE.chkEx('c = (U<sub>ном</sub> − I<sub>ном</sub>R)/Ω<sub>ном</sub> = 2,273 В·с/рад', '2,27')}</div></div>${renderItems(rep.items, tab)}${simHints(tab)}${filesPanel(tab)}
-        <div style="display:flex;justify-content:space-between;gap:8px;margin-top:22px;flex-wrap:wrap">${+no > 1 ? `<button class="btn" data-go="lr${+no - 1}">← ЛР № ${+no - 1}</button>` : '<span></span>'}${+no < 6 ? `<button class="btn" data-go="lr${+no + 1}">ЛР № ${+no + 1} →</button>` : ''}</div>
+        <div style="display:flex;justify-content:space-between;gap:8px;margin-top:22px;flex-wrap:wrap">${prv ? `<button class="btn" data-go="${prv}">← ЛР № ${prv.slice(2)}</button>` : '<span></span>'}${nxt ? `<button class="btn" data-go="${nxt}">ЛР № ${nxt.slice(2)} →</button>` : ''}</div>
       </div></article>`;
     $$('[data-go]').forEach(b => b.onclick = () => go(b.dataset.go));
     bindFiles(main);
@@ -1000,8 +1013,8 @@
   }
   const mNum = x => { if (typeof x !== 'number') return String(x); const s = String(+x.toPrecision(6)); return s.includes('e') ? x.toExponential(4).replace(/\.?0+e/, 'e') : s; };
   const mVal = v => Array.isArray(v) ? (Array.isArray(v[0]) ? '[' + v.map(r => r.map(mNum).join(' ')).join('; ') + ']' : '[' + v.map(mNum).join(' ') + ']') : mNum(v);
-  const PNAME = { Numerator: 'Числитель', Denominator: 'Знаменатель', Gain: 'Усиление (Gain)', After: 'Конечное значение', Time: 'Время шага', Inputs: 'Знаки входов', A: 'A', B: 'B', C: 'C', D: 'D', SampleTime: 'Шаг дискретизации' };
-  const BTYPE = { tf: 'Transfer Fcn', gain: 'Gain', sum: 'Sum', step: 'Step', dss: 'Discrete State-Space', zoh: 'Zero-Order Hold', prod: 'Product', clock: 'Clock' };
+  const PNAME = { Numerator: 'Числитель', Denominator: 'Знаменатель', Gain: 'Усиление (Gain)', After: 'Конечное значение', Time: 'Время шага', Inputs: 'Знаки входов', A: 'A', B: 'B', C: 'C', D: 'D', SampleTime: 'Шаг дискретизации', IconShape: 'Форма (Icon shape)', slope: 'Наклон (Slope)', start: 'Время начала (Start time)', Period: 'Период (Period)', PulseWidth: 'Ширина импульса, % периода', Amplitude: 'Амплитуда', PhaseDelay: 'Задержка (Phase delay)', Criteria: 'Условие пропуска 1-го входа', Threshold: 'Порог (Threshold)' };
+  const BTYPE = { tf: 'Transfer Fcn', gain: 'Gain', sum: 'Sum', step: 'Step', dss: 'Discrete State-Space', zoh: 'Zero-Order Hold', prod: 'Product', clock: 'Clock', ramp: 'Ramp', pulse: 'Pulse Generator', sw: 'Switch' };
   let SIMHINT = {};
   function simHints(tab) {
     let ms = []; try { ms = G.models(S.R).filter(x => x.tab === tab); } catch (e) { console.error(e); return ''; }
@@ -1026,9 +1039,11 @@
       return `<details class="adv sh"><summary>${esc(x.file)}.slx${ms.length > 1 ? ' — ' + (x.file.endsWith('_pid') ? 'ν = 2, ПИД-регулятор положения' : 'ν = 1, интегро-дифференцирующий регулятор') : ''}</summary><div class="in"><div class="tbl sh-tbl"><table><thead><tr><th>Блок</th><th>Параметр</th><th>Значение</th></tr></thead><tbody>${rows.join('')}</tbody></table></div></div></details>`;
     }).join('');
     const P = S.P, f = fnum;
+    const posNote = `Значения даны для ступенчатого задания α<sub>з</sub> = 1 рад. Для ошибки по заданию: Step → 0, ν = 2 — наклон Ramp1 = ε<sub>max</sub>/2, ν = 1 — наклон Ramp = Ω<sub>max</sub>. Для моментной ошибки: ν = 2 — наклон Ramp3 = M<sub>c0</sub>/2, ν = 1 — наклон Ramp1 = M<sub>c0</sub>.`;
     const note = { lr2: `Step задаёт U<sub>з</sub> = ${f(P.Uz)} В при t = 0, Step1 — наброс момента M<sub>c0</sub> = ${f(P.Mc)} Н·м при t = 1 с.`,
       lr3: `Значения Step/Step1 даны для переходной характеристики по заданию. Для характеристики по моменту сопротивления: Step → 0, Step1 → −M<sub>c0</sub> = −${f(P.Mc)}.`,
-      lr4: `Значения Step/Step1 даны для переходной характеристики по заданию. Для характеристики по моменту сопротивления: Step → 0, Step1 → −M<sub>c0</sub> = −${f(P.Mc)}.` }[tab];
+      lr4: `Значения Step/Step1 даны для переходной характеристики по заданию. Для характеристики по моменту сопротивления: Step → 0, Step1 → −M<sub>c0</sub> = −${f(P.Mc)}.`,
+      lr5: posNote, lr6: posNote }[tab];
     return `<h2>Блоки модели Simulink</h2><p>Если собираете модель вручную, впишите в блоки эти значения (копируются кнопкой). Имена блоков — как в скрипте <code>*_model.m</code>, который строит ту же модель автоматически.</p>${note ? `<div class="note">${note}</div>` : ''}${blocks}`;
   }
   /* файлы работы — шагами, в том же виде, что во всех утилитах: шаг → «Запустить / Результат» → текст файла; в конце — итог с архивом */
@@ -1117,7 +1132,8 @@
     const prog = t => { btn.innerHTML = '<span class="spinner"></span>' + t; };
     try {
       const zip = new JSZip(), root = 'Variant_' + S.P.variant + '/';
-      for (const t of ['lr1', 'lr2', 'lr3', 'lr4', 'lr5', 'lr6']) addLabFiles(zip, t, root);
+      const labs = labsOn();
+      for (const t of labs) addLabFiles(zip, t, root);
       zip.file(root + 'README.txt', G.readme(R));
       const keys = ['lr2', 'lr3', 'lr4', 'lr5pid', 'lr5id', 'lr6pid', 'lr6id'];
       for (let k = 0; k < keys.length; k++) { prog(' Моделирование ' + (k + 1) + '/' + keys.length); await getSim(keys[k]); await sleep(10); if (S.R !== R) throw new Error('Данные изменились во время экспорта'); }
@@ -1127,12 +1143,12 @@
       prog(' Данные…');
       for (const [name, csv] of Object.entries(allCsv())) zip.file(root + 'Report/data/' + name + '.csv', csv);
       zip.file(root + 'Report/report.html', reportHtml(R, Object.keys(imgs)));
-      for (const t of ['lr1', 'lr2', 'lr3', 'lr4', 'lr5', 'lr6']) { prog(' Отчёт ' + t.toUpperCase() + '…'); zip.file(root + t.toUpperCase() + '/' + docxName([t]), await buildDocxBlob([t])); }
+      for (const t of labs) { prog(' Отчёт ' + t.toUpperCase() + '…'); zip.file(root + t.toUpperCase() + '/' + docxName([t]), await buildDocxBlob([t])); }
       prog(' Единый отчёт…');
-      zip.file(root + 'Report/' + docxName(['lr1', 'lr2', 'lr3', 'lr4', 'lr5', 'lr6']), await buildDocxBlob(['lr1', 'lr2', 'lr3', 'lr4', 'lr5', 'lr6']));
+      zip.file(root + 'Report/' + docxName(labs), await buildDocxBlob(labs));
       prog(' Упаковка…');
       const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 6 } });
-      downloadBlob('Variant_' + S.P.variant + '_LR1-6.zip', blob);
+      downloadBlob('Variant_' + S.P.variant + '_LR' + labs.map(x => x.slice(2)).join('-') + '.zip', blob);
       toast('Полный архив сформирован');
     } catch (e) { console.error(e); toast('Ошибка экспорта: ' + e.message); }
     btn.disabled = false; btn.innerHTML = old;
@@ -1175,7 +1191,7 @@
       return { data: url.split(',')[1], w: 900, h };
     } finally { try { Plotly.purge(host); } catch (e) { /* ignore */ } host.remove(); }
   }
-  const SVG_STYLE = '<style>.wire{fill:none;stroke:#000;stroke-width:1.2}.arrowhead{fill:#000}.blk{fill:#fff;stroke:#000;stroke-width:1.2}.blk.acc{fill:#fff;stroke:#000;stroke-width:1.6}.blk.dsh{stroke-dasharray:5 3;fill:#fff}.bt{font:12px "Times New Roman",serif;fill:#000}.frac{stroke:#000;stroke-width:1}.cap{font:10.5px "Times New Roman",serif;fill:#333}.sum{fill:#fff;stroke:#000;stroke-width:1.2}.sumx{stroke:#000;stroke-width:.8}.sg{font:600 12px "Times New Roman",serif;fill:#000}.lbl{font:italic 13px "Times New Roman",serif;fill:#000}.dot{fill:#000}</style>';
+  const SVG_STYLE = '<style>.wire{fill:none;stroke:#000;stroke-width:1.1}.arrowhead{fill:#000}.blk,.sum{fill:#fff;stroke:#000;stroke-width:1.1}.bar{fill:#000}.ic{fill:none;stroke:#000;stroke-width:1.1}.ic.thin{stroke-width:.6;stroke:#555}.bt{font:11.5px "Courier New",monospace;fill:#000}.bt.sm{font-size:11px}.bt.tiny{font-size:9px}.bt.big{font-size:18px}.frac{stroke:#000;stroke-width:1}.cap{font:10.5px Arial,sans-serif;fill:#333}.sg{font:600 10px "Courier New",monospace;fill:#000}.lbl{font:italic 11.5px "Times New Roman",serif;fill:#000}.dot{fill:#000}</style>';
   function svgPng(id) {
     return new Promise((res, rej) => {
       let svg = diagramSvg(id);
@@ -1304,7 +1320,7 @@
     const ctx = { S, L, omml, png, simRows, simLines: true, isTexCell: TEXCELL, cellTex, labFiles, mcode, measure };
     try { return await REPORT.build(ctx, tabs, S.T, { explain: S.T.explain, listings: S.T.listings, readable: S.T.readable, codePlain: S.T.codePlain, eqNum: !!S.T.eqNum, line1: !!S.T.line1 }); } finally { meas.remove(); }
   }
-  function docxName(tabs) { return 'Otchet_' + (tabs.length > 1 ? 'LR1-6' : tabs[0].toUpperCase()) + '_var' + S.P.variant + '.docx'; }
+  function docxName(tabs) { return 'Otchet_' + (tabs.length > 1 ? 'LR' + tabs.map(x => x.slice(2)).join('-') : tabs[0].toUpperCase()) + '_var' + S.P.variant + '.docx'; }
   async function makeDocx(tabs, btn) {
     const old = btn.innerHTML; btn.disabled = true;
     try {
@@ -1365,8 +1381,8 @@
   }
   function reportHtml(R, imgs) {
     const parts = [];
-    for (const no of [1, 2, 3, 4, 5, 6]) {
-      const tab = 'lr' + no; let fig = 0;
+    for (const tab of labsOn()) {
+      const no = +tab.slice(2); let fig = 0;
       let h = `<section><h1>Лабораторная работа № ${no}. ${esc(TITLES[tab])}</h1>`;
       for (const it of R['L' + no].items) {
         if (it.k === 'plot') { fig++; h += imgs.includes(it.id) ? `<figure><img src="img/${it.id}.png" alt=""><figcaption>Рис. ${no}.${fig}. ${esc(it.title)}</figcaption></figure>` : ''; }
