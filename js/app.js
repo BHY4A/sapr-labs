@@ -253,6 +253,13 @@
         : `Принятое i меняется: ${g(iA)} → ${g(iB)} (${(iB / iA - 1) * 100 >= 0 ? '+' : ''}${String(+((iB / iA - 1) * 100).toFixed(2)).replace('.', ',')} %), вместе с ним — T<sub>м</sub> и M<sub>вр</sub> и все последующие расчёты.`;
       return { la: 'Как рассчитано', a: body(Ra, Rb), lb: 'До целого', b: body(Rb, Ra), b_on: on, note };
     },
+    T1zh() {
+      const cur = S.P.T1zh, auto = cur === 'auto' || cur === '' || cur == null, Ra = auto ? S.R : altR({ T1zh: 'auto' }), Rb = String(cur) === '2' ? S.R : altR({ T1zh: 2 });
+      const body = r => { const l = r.lr5, wc = l.KW * l.Ta / l.T1zh1, ok = wc <= l.wcLim * (1 + 1e-9); return F(`T<sub>1ж</sub> = ${fnum(l.T1zh1)} с`) + F(`ω<sub>с</sub> = K<sub>Ω</sub>T<sub>2ж</sub>/T<sub>1ж</sub> = ${fnum(wc, 3)} с⁻¹ ${ok ? '≤' : '>'} ${fnum(l.wcLim, 3)} с⁻¹`) + TX(ok ? 'Частота среза в пределах полосы контура скорости.' : 'Частота среза выше допустимой: контур скорости и период T<sub>0</sub> не успевают за регулятором положения.'); };
+      const same = Math.abs(Ra.lr5.T1zh1 - 2) < 1e-9;
+      const note = (same ? 'В этом варианте T<sub>1ж</sub> = 2 с и так допустима, поэтому расчёт не меняется. ' : '') + (!auto && String(cur) !== '2' ? `Сейчас задано своё значение T<sub>1ж</sub> = ${fnum(+cur)} с (в «Константах методики»).` : '');
+      return { la: 'Подбирать (рекомендуется)', a: body(Ra), lb: '2 с, как в методичке', b: body(Rb), b_on: !auto, note };
+    },
     allLabs() {
       const o = S.R.lr1, on = !!S.P.allLabs, cs = S.R.labsCase || ALL_LABS;
       const list = t => ALL_LABS.map(x => `<span class="ex-lab${t.includes(x) ? '' : ' off'}">ЛР ${x.slice(2)}</span>`).join(' ');
@@ -437,6 +444,7 @@
             ${optRow('Перевод градусов в радианы', 'Для Ω<sub>max</sub>, ε<sub>max</sub>, α<sub>max</sub> и пересчёта ошибок в угловые минуты.', seg('P', 'deg57', P.deg57 ? 57 : 0, [[0, 'Точно, ×π/180'], [57, 'Делением на 57']], 'num'))}
             ${optRow('Промежуточные параметры', 'c, T<sub>м</sub>, T<sub>э</sub>, T<sub>тп</sub>, K<sub>ос</sub>, T<sub>ф</sub>… — до 0,001; параметры регуляторов — до 3 значащих цифр.', seg('P', 'roundManual', !!P.roundManual, [[false, 'Полная точность'], [true, 'Округлять']], 'bool'))}
             ${optRow('Состав работ', 'По методичке набор работ зависит от двигателя: при T<sub>м</sub> ≥ 4T<sub>э</sub> выполняются ЛР 1, 2, 3, 5 (аналоговые регуляторы), при T<sub>м</sub> < 4T<sub>э</sub> — ЛР 1, 2, 4, 6 (цифровые). Ненужные работы скрываются из меню, отчётов и архива.', seg('P', 'allLabs', !!P.allLabs, [[false, 'По типу двигателя'], [true, 'Все шесть работ']], 'bool'))}
+            ${optRow('Постоянная T<sub>1ж</sub> желаемой ЛАЧХ (ν = 1)', 'В методичке (пример 5.2) T<sub>1ж</sub> = 2 с принято для любого варианта, но в части вариантов (21 из 222) частота среза K<sub>Ω</sub>T<sub>2ж</sub>/T<sub>1ж</sub> тогда выше допустимой для контура скорости и периода T<sub>0</sub>. По умолчанию — рекомендуемый вариант «Подбирать»: T<sub>1ж</sub> = 2 с, если это допустимо, иначе наименьшее значение с шагом 0,5 с, при котором частота среза в норме. «2 с, как в методичке» — всегда 2 с. Своё значение можно ввести в «Константах методики».', seg('P', 'T1zh', P.T1zh === 'auto' || P.T1zh === '' || P.T1zh == null ? 'auto' : String(P.T1zh), [['auto', 'Подбирать (рекомендуется)'], ['2', '2 с, как в методичке']], 'str'))}
             ${optRow('Передаточное число редуктора', 'В примерах методички округляется до целого: i = 69, i = 882.', seg('P', 'roundGear', !!P.roundGear, [[false, 'Как рассчитано'], [true, 'До целого']], 'bool'))}
           </div>
           <details class="adv"><summary>Константы методики (ТП, датчики, регуляторы)</summary><div class="in"><div class="form-grid">${ADV.map(f => fld(f[0], f[1], f[2], f[3], P[f[0]], +L.defaults()[f[0]] !== +P[f[0]] && !(f[0] === 'T1zh' && P.T1zh === 'auto'))).join('')}</div>
@@ -483,7 +491,7 @@
     $('#f-C1').value = String(P.C1); $('#f-C2').value = String(P.C2);
     $$('#main input[data-key], #main select[data-key]').forEach(el => el.addEventListener('change', onField));
     $$('#main .seg button').forEach(b => b.onclick = () => {
-      const g = b.parentElement, raw = b.dataset.val, v = g.dataset.kind === 'bool' ? raw === 'true' : +raw;
+      const g = b.parentElement, raw = b.dataset.val, v = g.dataset.kind === 'bool' ? raw === 'true' : g.dataset.kind === 'str' ? raw : +raw;
       $$('button', g).forEach(x => x.setAttribute('aria-checked', String(x === b)));
       if (g.dataset.scope === 'P') { S.P[g.dataset.key] = v; recompute(); } else { S.T[g.dataset.key] = v; saveT(); refreshPv(g.dataset.key); }
     });
@@ -512,7 +520,7 @@
     S.P[k] = v;
     recompute();
   }
-  function setVariant(v) { v = Math.min(222, Math.max(1, v)); const keep = {}; ['roundManual', 'roundGear', 'deg57', 'dec', 'allLabs'].forEach(k => keep[k] = S.P[k]); S.P = Object.assign(L.fromVariant(v), keep); recompute(); }
+  function setVariant(v) { v = Math.min(222, Math.max(1, v)); const keep = {}; ['roundManual', 'roundGear', 'deg57', 'dec', 'allLabs', 'T1zh'].forEach(k => keep[k] = S.P[k]); S.P = Object.assign(L.fromVariant(v), keep); recompute(); }
 
   /* ---------- вкладки ЛР ---------- */
   function kpis(tab) {
