@@ -161,7 +161,10 @@
       d.blk('Gain', 'gain', x + 20, y, { val: num(l3.Krc) }, { Gain: 'num2str(Krc, 10)' }, GN('пропорциональная часть регулятора скорости', l3.Krc, 'Kрс = ' + fc(l3.Krc)));
       d.blk('Transfer Fcn1', 'tf', x + 20, y + 62, { num: num(l3.Krc), den: poly([l3.Trc1, 0]) }, { Numerator: 'num2str(Krc, 10)', Denominator: 'mat2str([Trc1 0], 10)' },
         TF('интегральная часть Kрс/(Tрс1 s)', [l3.Krc], [l3.Trc1, 0], 'Kрс = ' + fc(l3.Krc), 'Tрс1 = ' + fc(l3.Trc1) + ' с'));
-      x += 40 + 36;
+      // оба звена ровно под друг другом, правее точки ветвления xe
+      const mw = Math.max(d.b.Gain.w, d.b['Transfer Fcn1'].w), cx = xe + 24 + mw / 2;
+      d.b.Gain.x = d.b['Transfer Fcn1'].x = cx;
+      x = cx + mw / 2 + 34 + 12;
       d.blk('Sum1', 'sum', x, y, { ports: ['l', 'b'], signs: '++' }, {}, 'ПИ-часть: Kрс + Kрс/(Tрс1 s)');
       x += 12 + 34;
       const w = Math.max(poly([l3.Trc2, 1]).length, poly([l3.Trc3, 1]).length) * 6.9 + 18;
