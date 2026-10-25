@@ -23,6 +23,8 @@
       case 'tf': case 'int': case 'deriv': return [Math.max(36, Math.max(tw(o.num), tw(o.den)) + 16), 40];
       case 'gain': return [Math.max(34, tw(o.val) + 26), Math.max(30, o.h || 0)];
       case 'sum': return [22, 22];
+      case 'add': return [o.w || 26, o.h || Math.max(30, (o.nIn || (o.signs || '++').length) * 16)];
+      case 'sumel': return [o.w || 30, o.h || 30];
       case 'step': case 'ramp': case 'clock': case 'zoh': case 'pulse': case 'prod': case 'sat': case 'scope': case 'term': case 'ground': case 'switch':
         return [o.w || (t === 'term' || t === 'ground' ? 20 : 32), o.h || (t === 'switch' ? 44 : t === 'term' || t === 'ground' ? 20 : 32)];
       case 'const': case 'display': case 'tows': case 'round': return [Math.max(t === 'display' ? 60 : 34, tw(o.val || o.text || '') + 16), 30];
@@ -38,7 +40,7 @@
   Diagram.prototype.add = function (id, t, x, y, o) {
     o = Object.assign({}, o || {});
     const [w, h] = size(t, o);
-    const nIn = o.nIn != null ? o.nIn : ({ step: 0, ramp: 0, clock: 0, const: 0, pulse: 0, inport: 0, ground: 0, sum: (o.ports || ['l', 'b']).length, prod: 2, switch: 3, mux: o.n || 2 }[t] ?? 1);
+    const nIn = o.nIn != null ? o.nIn : ({ step: 0, ramp: 0, clock: 0, const: 0, pulse: 0, inport: 0, ground: 0, sum: (o.ports || ['l', 'b']).length, add: (o.signs || '++').length, prod: 2, switch: 3, mux: o.n || 2 }[t] ?? 1);
     const nOut = o.nOut != null ? o.nOut : ({ scope: 0, display: 0, tows: 0, outport: 0, term: 0, demux: o.n || 2 }[t] ?? 1);
     const bk = { id, t, x, y, w: o.w || w, h: o.h || h, o, nIn, nOut };
     this.b[id] = bk; this.order.push(id); return bk;
@@ -130,6 +132,8 @@
       case 'zoh': return R() + P(`M${x0 + 5} ${cy + 8} H${x0 + 11} V${cy + 2} H${x0 + 17} V${cy - 4} H${x0 + 23} V${cy - 9} H${x0 + w - 5}`);
       case 'sat': return R() + P(`M${x0 + 5} ${cy + 7} H${cx - 6} L${cx + 6} ${cy - 7} H${x0 + w - 5}`) + P(`M${cx} ${y0 + 4} V${y0 + h - 4} M${x0 + 4} ${cy} H${x0 + w - 4}`, 'ic thin');
       case 'prod': return R() + T('×', cx, cy + 6, 'bt big');
+      case 'sumel': return R() + T('Σ', cx, cy + 6, 'bt big');
+      case 'add': return R() + String(o.signs || '++').split('').map((c, k) => T(c === '-' ? '−' : '+', x0 + 7, y0 + h * (k + 0.5) / b.nIn + 4, 'sg', 'middle')).join('');
       case 'switch': {
         const yi = k => y0 + h * (k - 0.5) / 3, xr = x0 + w;
         return R() + P(`M${x0} ${yi(1)} H${x0 + 9} M${x0} ${yi(3)} H${x0 + 9} M${x0 + 9} ${yi(1)} L${xr - 8} ${cy} H${xr}`) + `<circle class="ic" cx="${x0 + 9}" cy="${yi(3)}" r="1.8"/>` + T('>0', x0 + 13, yi(2) + 4, 'bt tiny', 'start');
